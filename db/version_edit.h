@@ -29,6 +29,17 @@ struct FileMetaData {
   FileMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0) { }
 };
 
+struct CloudFile {
+  int refs;
+  uint64_t file_size;         // File size in bytes
+  InternalKey smallest;
+  InternalKey largest;
+  uint64_t obj_num;
+  // TODO Add Bloom Filter
+
+  CloudFile() : refs(0), file_size(0) { }
+};
+
 class VersionEdit {
  public:
   VersionEdit() { 
@@ -92,11 +103,32 @@ class VersionEdit {
     new_files_.push_back(std::make_pair(level, f));
   }
 
+  void AddCloudFile(uint64_t name,
+               uint64_t file_size,
+               const InternalKey& smallest,
+               const InternalKey& largest) {
+    if (LOG)
+      std::cout << "VersionEdit::AddCloudFile()" << std::endl;
+    CloudFile f;
+    f.obj_num = name;
+    f.file_size = file_size;
+    f.smallest = smallest;
+    f.largest = largest;
+    new_cloud_files_.push_back(f);
+  }
+
+
   // Delete the specified "file" from the specified "level".
   void DeleteFile(int level, uint64_t file) {
     if (LOG)
       std::cout << "VersionEdit::DeleteFile()" << std::endl;
     deleted_files_.insert(std::make_pair(level, file));
+  }
+
+  void DeleteCloudFile(uint64_t name) {
+    if (LOG)
+      std::cout << "VersionEdit::DeleteCloudFile()" << std::endl;
+    deleted_cloud_files_.push_back(name);
   }
 
   void EncodeTo(std::string* dst) const;
@@ -123,6 +155,8 @@ class VersionEdit {
   std::vector< std::pair<int, InternalKey> > compact_pointers_;
   DeletedFileSet deleted_files_;
   std::vector< std::pair<int, FileMetaData> > new_files_;
+  std::vector<CloudFile> new_cloud_files_;
+  std::vector<uint64_t> deleted_cloud_files_;
 };
 
 }  // namespace leveldb

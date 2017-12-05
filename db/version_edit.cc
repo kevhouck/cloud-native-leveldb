@@ -24,7 +24,9 @@ enum Tag {
   kDeletedFile          = 6,
   kNewFile              = 7,
   // 8 was used for large value refs
-  kPrevLogNumber        = 9
+  kPrevLogNumber        = 9,
+  kNewCloudFile         = 10,
+  kDeletedCloudFile     = 11,
 };
 
 void VersionEdit::Clear() {
@@ -91,6 +93,20 @@ void VersionEdit::EncodeTo(std::string* dst) const {
     PutLengthPrefixedSlice(dst, f.smallest.Encode());
     PutLengthPrefixedSlice(dst, f.largest.Encode());
   }
+  
+  for (size_t i = 0; i < new_cloud_files_.size(); i++) {
+    const CloudFile& f = new_cloud_files_[i];
+    PutVarint32(dst, kNewCloudFile);
+    PutVarint64(dst, f.obj_num);
+    PutVarint64(dst, f.file_size);
+    PutLengthPrefixedSlice(dst, f.smallest.Encode());
+    PutLengthPrefixedSlice(dst, f.largest.Encode());
+  }
+
+  for (size_t i = 0; i < deleted_cloud_files_.size(); i++) {
+    PutVarint32(dst, kDeletedCloudFile);
+    PutVarint64(dst, deleted_cloud_files_[i]); 
+  }
 }
 
 static bool GetInternalKey(Slice* input, InternalKey* dst) {
@@ -130,6 +146,7 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
   int level;
   uint64_t number;
   FileMetaData f;
+  CloudFile cf;
   Slice str;
   InternalKey key;
 
@@ -205,6 +222,23 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
           msg = "new-file entry";
         }
         break;
+    
+      case kNewCloudFile:
+        if (GetVarint64(&input, &cf.obj_num) &&
+            GetVarint64(&input, &cf.file_size) &&
+            GetInternalKey(&input, &cf.smallest) &&
+            GetInternalKey(&input, &cf.largest)) {
+          new_cloud_files_.push_back(cf);
+        } else {
+          msg = "new-cloud-file entry"; // TODO is this just an error message
+        }
+
+      case kDeletedCloudFile:
+        if (GetVarint64(&input, &number)) {
+          deleted_cloud_files_.push_back(number);
+        } else {
+          msg = "deleted cloud file";
+        }
 
       default:
         msg = "unknown tag";
