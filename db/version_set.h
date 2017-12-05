@@ -56,6 +56,22 @@ extern bool SomeFileOverlapsRange(
     const Slice* smallest_user_key,
     const Slice* largest_user_key);
 
+struct CloudFile {
+  InternalKey smallest_key;
+  InternalKey largest_key;
+  std::string obj_name;
+  // TODO Add Bloom Filter
+};
+
+class CloudLevel {
+  public:
+    Status Get(const ReadOptions&, const LookupKey& key, std::string* val);
+    
+  private:
+    std::vector<CloudFile> files_;
+};
+
+
 class Version {
  public:
   // Append to *iters a sequence of iterators that will
