@@ -10,6 +10,10 @@
 #include <vector>
 #include "db/dbformat.h"
 
+#include <iostream>
+
+#define LOG 1
+
 namespace leveldb {
 
 class VersionSet;
@@ -27,7 +31,12 @@ struct FileMetaData {
 
 class VersionEdit {
  public:
-  VersionEdit() { Clear(); }
+  VersionEdit() { 
+    if (LOG)
+      std::cout << "VersionEdit()" << std::endl;
+  
+    Clear(); 
+  }
   ~VersionEdit() { }
 
   void Clear();
@@ -37,22 +46,32 @@ class VersionEdit {
     comparator_ = name.ToString();
   }
   void SetLogNumber(uint64_t num) {
+    if (LOG)
+      std::cout << "VersionEdit::SetLogNumber()" << std::endl;
     has_log_number_ = true;
     log_number_ = num;
   }
   void SetPrevLogNumber(uint64_t num) {
+    if (LOG)
+      std::cout << "VersionEdit::SetPrevLogNumber()" << std::endl;
     has_prev_log_number_ = true;
     prev_log_number_ = num;
   }
   void SetNextFile(uint64_t num) {
+    if (LOG)
+      std::cout << "VersionEdit::SetNextFile()" << std::endl;
     has_next_file_number_ = true;
     next_file_number_ = num;
   }
   void SetLastSequence(SequenceNumber seq) {
+    if (LOG)
+      std::cout << "VersionEdit::SetLastSequence()" << std::endl;
     has_last_sequence_ = true;
     last_sequence_ = seq;
   }
   void SetCompactPointer(int level, const InternalKey& key) {
+    if (LOG)
+      std::cout << "VersionEdit::SetCompactPointer()" << std::endl;
     compact_pointers_.push_back(std::make_pair(level, key));
   }
 
@@ -63,6 +82,8 @@ class VersionEdit {
                uint64_t file_size,
                const InternalKey& smallest,
                const InternalKey& largest) {
+    if (LOG)
+      std::cout << "VersionEdit::AddFile()" << std::endl;
     FileMetaData f;
     f.number = file;
     f.file_size = file_size;
@@ -73,6 +94,8 @@ class VersionEdit {
 
   // Delete the specified "file" from the specified "level".
   void DeleteFile(int level, uint64_t file) {
+    if (LOG)
+      std::cout << "VersionEdit::DeleteFile()" << std::endl;
     deleted_files_.insert(std::make_pair(level, file));
   }
 

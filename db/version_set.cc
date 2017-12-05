@@ -18,10 +18,14 @@
 #include "util/coding.h"
 #include "util/logging.h"
 
+#include <iostream>
+
+#define LOG 1
+
 namespace leveldb {
 
 static int TargetFileSize(const Options* options) {
-  return options->max_file_size;
+ return options->max_file_size;
 }
 
 // Maximum bytes of overlaps in grandparent (i.e., level+2) before we
@@ -632,6 +636,8 @@ class VersionSet::Builder {
   Builder(VersionSet* vset, Version* base)
       : vset_(vset),
         base_(base) {
+    if (LOG)
+      std::cout << "Builder()" << std::endl;
     base_->Ref();
     BySmallestKey cmp;
     cmp.internal_comparator = &vset_->icmp_;
@@ -641,6 +647,8 @@ class VersionSet::Builder {
   }
 
   ~Builder() {
+    if (LOG)
+      std::cout << "~Builder()" << std::endl;
     for (int level = 0; level < config::kNumLevels; level++) {
       const FileSet* added = levels_[level].added_files;
       std::vector<FileMetaData*> to_unref;
@@ -663,6 +671,8 @@ class VersionSet::Builder {
 
   // Apply all of the edits in *edit to the current state.
   void Apply(VersionEdit* edit) {
+    if (LOG)
+      std::cout << "VersionSet::Builder::Apply()" << std::endl;
     // Update compaction pointers
     for (size_t i = 0; i < edit->compact_pointers_.size(); i++) {
       const int level = edit->compact_pointers_[i].first;
@@ -709,6 +719,8 @@ class VersionSet::Builder {
 
   // Save the current state in *v.
   void SaveTo(Version* v) {
+    if (LOG)
+      std::cout << "Builder::SaveTo()" << std::endl;
     BySmallestKey cmp;
     cmp.internal_comparator = &vset_->icmp_;
     for (int level = 0; level < config::kNumLevels; level++) {
@@ -757,6 +769,8 @@ class VersionSet::Builder {
   }
 
   void MaybeAddFile(Version* v, int level, FileMetaData* f) {
+    if (LOG)
+      std::cout << "Builder::MaybeAddFile()" << std::endl;
     if (levels_[level].deleted_files.count(f->number) > 0) {
       // File is deleted: do nothing
     } else {
@@ -801,6 +815,8 @@ VersionSet::~VersionSet() {
 }
 
 void VersionSet::AppendVersion(Version* v) {
+  if (LOG)
+    std::cout << "VersionSet::AppendVersion()" << std::endl;
   // Make "v" current
   assert(v->refs_ == 0);
   assert(v != current_);
@@ -818,6 +834,8 @@ void VersionSet::AppendVersion(Version* v) {
 }
 
 Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
+  if (LOG)
+    std::cout << "VersionSet::LogAndApply()" << std::endl;
   if (edit->has_log_number_) {
     assert(edit->log_number_ >= log_number_);
     assert(edit->log_number_ < next_file_number_);
@@ -1062,6 +1080,8 @@ void VersionSet::MarkFileNumberUsed(uint64_t number) {
 }
 
 void VersionSet::Finalize(Version* v) {
+  if (LOG)
+    std::cout << "VersionSet::Finalize()" << std::endl;
   // Precomputed best level for next compaction
   int best_level = -1;
   double best_score = -1;

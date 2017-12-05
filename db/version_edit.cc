@@ -7,6 +7,10 @@
 #include "db/version_set.h"
 #include "util/coding.h"
 
+#include <iostream>
+
+#define LOG 1
+
 namespace leveldb {
 
 // Tag numbers for serialized VersionEdit.  These numbers are written to
@@ -24,6 +28,8 @@ enum Tag {
 };
 
 void VersionEdit::Clear() {
+  if (LOG)
+    std::cout << "VersionEdit::Clear()" << std::endl;
   comparator_.clear();
   log_number_ = 0;
   prev_log_number_ = 0;
@@ -39,6 +45,8 @@ void VersionEdit::Clear() {
 }
 
 void VersionEdit::EncodeTo(std::string* dst) const {
+  if (LOG)
+    std::cout << "VersionEdit::EncodeTo()" << std::endl;
   if (has_comparator_) {
     PutVarint32(dst, kComparator);
     PutLengthPrefixedSlice(dst, comparator_);
@@ -86,6 +94,8 @@ void VersionEdit::EncodeTo(std::string* dst) const {
 }
 
 static bool GetInternalKey(Slice* input, InternalKey* dst) {
+  if (LOG)
+    std::cout << "VersionEdit::GetInternalKey()" << std::endl;
   Slice str;
   if (GetLengthPrefixedSlice(input, &str)) {
     dst->DecodeFrom(str);
@@ -96,6 +106,8 @@ static bool GetInternalKey(Slice* input, InternalKey* dst) {
 }
 
 static bool GetLevel(Slice* input, int* level) {
+  if (LOG)
+    std::cout << "VersionEdit::GetLevel()" << std::endl;
   uint32_t v;
   if (GetVarint32(input, &v) &&
       v < config::kNumLevels) {
@@ -107,6 +119,8 @@ static bool GetLevel(Slice* input, int* level) {
 }
 
 Status VersionEdit::DecodeFrom(const Slice& src) {
+  if (LOG)
+    std::cout << "VersionEdit::DecodeFrom()" << std::endl;
   Clear();
   Slice input = src;
   const char* msg = NULL;
@@ -210,6 +224,8 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
 }
 
 std::string VersionEdit::DebugString() const {
+  if (LOG)
+    std::cout << "VersionEdit::DebugString()" << std::endl;
   std::string r;
   r.append("VersionEdit {");
   if (has_comparator_) {
