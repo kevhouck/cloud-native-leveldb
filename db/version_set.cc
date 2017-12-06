@@ -627,10 +627,15 @@ class VersionSet::Builder {
     FileSet* added_files;
   };
 
+  struct CloudLevelState {
+    std::vector<CloudFile*> added_cloud_files;
+    std::vector<uint64_t> deleted_cloud_files;
+  };
+
   VersionSet* vset_;
   Version* base_;
   LevelState levels_[config::kNumLevels];
-
+  CloudLevelState cloud_level_;
  public:
   // Initialize a builder with the files from *base and other info from *vset
   Builder(VersionSet* vset, Version* base)
@@ -690,6 +695,10 @@ class VersionSet::Builder {
       levels_[level].deleted_files.insert(number);
     }
 
+    for (size_t i = 0; i < edit->deleted_cloud_files_.size(); i++) {
+      cloud_level_.deleted_cloud_files.push_back(edit->deleted_cloud_files_[i]);
+    }
+
     // Add new files
     for (size_t i = 0; i < edit->new_files_.size(); i++) {
       const int level = edit->new_files_[i].first;
@@ -714,6 +723,11 @@ class VersionSet::Builder {
 
       levels_[level].deleted_files.erase(f->number);
       levels_[level].added_files->insert(f);
+    }
+
+    for (size_t i = 0; i < edit->new_cloud_files_.size(); i++) {
+      CloudFile* f = new CloudFile(edit->new_cloud_files_[i]);
+      cloud_level_.added_cloud_files.push_back(f);
     }
   }
 
@@ -748,6 +762,34 @@ class VersionSet::Builder {
       // Add remaining base files
       for (; base_iter != base_end; ++base_iter) {
         MaybeAddFile(v, level, *base_iter);
+      }
+
+      // Add Cloud files
+      for (std::vector<CloudFile*>::const_iterator cpos =  cloud_level_.added_cloud_files.begin();
+          cpos !=  cloud_level_.added_cloud_files.end();
+          ++cpos) {
+         base_->cloud_level_.files_.push_back(*cpos);
+      }
+
+      // Transfer Cloud files from last version
+      for (std::vector<CloudFile*>::const_iterator cpos = base_->cloud_level_.files_.begin();
+          cpos != base_->cloud_level_.files_.end();
+          ++cpos) {
+        bool was_deleted = false;
+        for (std::vector<uint64_t>::const_iterator dpos = cloud_level_.deleted_cloud_files.begin();
+            dpos != cloud_level_.deleted_cloud_files.end();
+            ++dpos) {
+          if ((*cpos)->obj_num == *dpos) {
+            was_deleted = true;
+          }
+        }
+        if (was_deleted) {
+          // Do not add
+          // TODO should CloudFile objects be deallocated here?
+        } else {
+          // TODO why does leveldb incr refs here?
+          base_->cloud_level_.files_.push_back(*cpos);
+        }
       }
 
 #ifndef NDEBUG

@@ -59,8 +59,6 @@ extern bool SomeFileOverlapsRange(
 class CloudLevel {
   public:
     Status Get(const ReadOptions&, const LookupKey& key, std::string* val);
-    
-  private:
     std::vector<CloudFile*> files_;
 };
 
@@ -121,6 +119,9 @@ class Version {
   // Return a human readable string that describes this version's contents.
   std::string DebugString() const;
 
+  // Cloud level
+  CloudLevel cloud_level_;
+
  private:
   friend class Compaction;
   friend class VersionSet;
@@ -144,9 +145,6 @@ class Version {
 
   // List of files per level
   std::vector<FileMetaData*> files_[config::kNumLevels];
-
-  // Cloud level
-  CloudLevel* cloud_level_;
 
   // Next file to compact based on seek stats.
   FileMetaData* file_to_compact_;
