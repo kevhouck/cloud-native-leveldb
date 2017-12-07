@@ -1159,6 +1159,9 @@ void VersionSet::Finalize(Version* v) {
 
   v->compaction_level_ = best_level;
   v->compaction_score_ = best_score;
+
+  const uint64_t last_level_bytes = TotalFileSize(v->files_[config::kNumLevels-1]);
+  v->cloud_score_ = static_cast<double>(last_level_bytes) / MaxBytesForLevel(options_, config::kNumLevels-1);
 }
 
 Status VersionSet::WriteSnapshot(log::Writer* log) {
@@ -1348,6 +1351,40 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   Iterator* result = NewMergingIterator(&icmp_, list, num);
   delete[] list;
   return result;
+}
+
+bool VersionSet::ShouldCloudCompact() {
+  return current_->cloud_score_ > current_->compaction_score_;
+}
+
+CloudCompaction* VersionSet::PickCloudCompaction() {
+  CloudCompaction *c;
+  std::vector<FileMetaData*> last_level_files = current_->files_[config::kNumLevels-1];
+  assert(last_level_files.empty()); 
+  for (size_t i = 0; i < last_level_files.size(); i++) {
+    FileMetaData* f = last_level_files[i];
+    if (cloud_compact_pointer_.empty() || icmp_.Compare(f->largest.Encode(), cloud_compact_pointer_) > 0) {
+        c->local_inputs_.push_back(f);
+        break;
+    }
+  }
+  if (c->local_inputs_.empty()) {
+    c->local_inputs_.push_back(last_level_files[0]);
+  }
+      
+  c->input_version_ = current_;
+  c->input_version_->Ref(); // TODO actually use refs
+
+  InternalKey smallest, largest;
+  GetRange(c->local_inputs_, &smallest, &largest);
+
+  // TODO find cloud files that we are compacting into
+  // TODO see if we can compact more files for free
+
+  cloud_compact_pointer_ = largest.Encode().ToString();
+  c->edit_.SetCloudCompactPointer(largest);
+  
+  return c;
 }
 
 Compaction* VersionSet::PickCompaction() {

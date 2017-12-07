@@ -28,6 +28,7 @@ namespace leveldb {
 namespace log { class Writer; }
 
 class Compaction;
+class CloudCompaction;
 class Iterator;
 class MemTable;
 class TableBuilder;
@@ -149,12 +150,13 @@ class Version {
   // Next file to compact based on seek stats.
   FileMetaData* file_to_compact_;
   int file_to_compact_level_;
-
+  
   // Level that should be compacted next and its compaction score.
   // Score < 1 means compaction is not strictly needed.  These fields
   // are initialized by Finalize().
   double compaction_score_;
   int compaction_level_;
+  double cloud_score_;
 
   explicit Version(VersionSet* vset)
       : vset_(vset), next_(this), prev_(this), refs_(0),
@@ -234,6 +236,11 @@ class VersionSet {
   // Return the log file number for the log file that is currently
   // being compacted, or zero if there is no such log file.
   uint64_t PrevLogNumber() const { return prev_log_number_; }
+
+
+  bool ShouldCloudCompact();
+
+  CloudCompaction* PickCloudCompaction();
 
   // Pick level and inputs for a new compaction.
   // Returns NULL if there is no compaction to be done.
@@ -325,10 +332,36 @@ class VersionSet {
   // Per-level key at which the next compaction at that level should start.
   // Either an empty string, or a valid InternalKey.
   std::string compact_pointer_[config::kNumLevels];
-
+  std::string cloud_compact_pointer_;
+  
   // No copying allowed
   VersionSet(const VersionSet&);
   void operator=(const VersionSet&);
+};
+
+class CloudCompaction {
+  public:
+    struct Output;
+    std::vector<Output> compactions_;
+
+    Version* input_version_;
+    VersionEdit edit_;
+    std::vector<FileMetaData*> local_inputs_;
+    std::vector<CloudFile*> cloud_inputs_;
+    
+    CloudCompaction(const Options* options);
+};
+
+class CloudCompaction::Output {
+  public:
+    enum compaction_state {
+      created = 1,
+      started = 2,
+      completed = 3,
+      failed = 4,
+    };
+    uint64_t obj_num;
+    compaction_state state = created;
 };
 
 // A Compaction encapsulates information about a compaction.

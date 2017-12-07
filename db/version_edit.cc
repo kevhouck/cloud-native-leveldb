@@ -27,6 +27,7 @@ enum Tag {
   kPrevLogNumber        = 9,
   kNewCloudFile         = 10,
   kDeletedCloudFile     = 11,
+  kCloudCompactPointer  = 12,
 };
 
 void VersionEdit::Clear() {
@@ -74,6 +75,11 @@ void VersionEdit::EncodeTo(std::string* dst) const {
     PutVarint32(dst, kCompactPointer);
     PutVarint32(dst, compact_pointers_[i].first);  // level
     PutLengthPrefixedSlice(dst, compact_pointers_[i].second.Encode());
+  }
+
+  for (size_t i = 0; i < cloud_compact_pointers_.size(); i++) {
+    PutVarint32(dst, kCloudCompactPointer);
+    PutLengthPrefixedSlice(dst, cloud_compact_pointers_[i].Encode());
   }
 
   for (DeletedFileSet::const_iterator iter = deleted_files_.begin();
@@ -199,6 +205,14 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
           compact_pointers_.push_back(std::make_pair(level, key));
         } else {
           msg = "compaction pointer";
+        }
+        break;
+
+      case kCloudCompactPointer:
+        if (GetInternalKey(&input, &key)) {
+          cloud_compact_pointers_.push_back(key);
+        } else {
+          msg = "cloud compaction pointer";
         }
         break;
 

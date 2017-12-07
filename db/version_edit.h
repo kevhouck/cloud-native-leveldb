@@ -86,6 +86,12 @@ class VersionEdit {
     compact_pointers_.push_back(std::make_pair(level, key));
   }
 
+  void SetCloudCompactPointer(const InternalKey& key) {
+    if (LOG)
+      std::cout << "VersionEdit::SetCloudCompactPointer()" << std::endl;
+    cloud_compact_pointers_.push_back(key);
+  }
+  
   // Add the specified file at the specified number.
   // REQUIRES: This version has not been saved (see VersionSet::SaveTo)
   // REQUIRES: "smallest" and "largest" are smallest and largest keys in file
@@ -153,6 +159,7 @@ class VersionEdit {
   bool has_last_sequence_;
 
   std::vector< std::pair<int, InternalKey> > compact_pointers_;
+  std::vector<InternalKey> cloud_compact_pointers_;
   DeletedFileSet deleted_files_;
   std::vector< std::pair<int, FileMetaData> > new_files_;
   std::vector<CloudFile> new_cloud_files_;
