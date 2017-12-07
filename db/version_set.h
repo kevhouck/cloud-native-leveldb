@@ -355,7 +355,7 @@ class CloudCompaction {
     std::vector<FileMetaData*> local_inputs_;
     std::vector<CloudFile*> cloud_inputs_;
     
-    CloudCompaction(const Options* options);
+    CloudCompaction(const Options* options) { }
 };
 
 class CloudCompaction::Output {

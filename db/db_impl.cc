@@ -99,7 +99,7 @@ Options SanitizeOptions(const std::string& dbname,
   result.filter_policy = (src.filter_policy != NULL) ? ipolicy : NULL;
   ClipToRange(&result.max_open_files,    64 + kNumNonTableCacheFiles, 50000);
   ClipToRange(&result.write_buffer_size, 64<<10,                      1<<30);
-  ClipToRange(&result.max_file_size,     1<<20,                       1<<30);
+  ClipToRange(&result.max_file_size,     1<<12,                       1<<30);
   ClipToRange(&result.block_size,        1<<10,                       4<<20);
   if (result.info_log == NULL) {
     // Open a log file in the same directory as the db
@@ -720,6 +720,12 @@ void DBImpl::BackgroundCompaction() {
         (m->begin ? m->begin->DebugString().c_str() : "(begin)"),
         (m->end ? m->end->DebugString().c_str() : "(end)"),
         (m->done ? "(end)" : manual_end.DebugString().c_str()));
+  } else if (versions_->ShouldCloudCompact()) {
+    CloudCompaction *cc = versions_->PickCloudCompaction();
+    // TODO cloud compaction
+    if (LOG)
+      std::cout << "DoCloudCompaction()" << std::endl;
+    return;
   } else {
     c = versions_->PickCompaction();
   }

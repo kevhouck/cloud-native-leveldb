@@ -46,7 +46,7 @@ static double MaxBytesForLevel(const Options* options, int level) {
   // the level-0 compaction threshold based on number of files.
 
   // Result for both level-0 and level-1
-  double result = 10. * 1048576.0;
+  double result = 10. * 40960.0;
   while (level > 1) {
     result *= 10;
     level--;
@@ -839,8 +839,6 @@ class VersionSet::Builder {
   }
 
   void MaybeAddFile(Version* v, int level, FileMetaData* f) {
-    if (LOG)
-      std::cout << "Builder::MaybeAddFile()" << std::endl;
     if (levels_[level].deleted_files.count(f->number) > 0) {
       // File is deleted: do nothing
     } else {
@@ -1382,11 +1380,19 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
 }
 
 bool VersionSet::ShouldCloudCompact() {
+  if (LOG) {
+    std::cout << "ShouldCloudCompact()" << std::endl;
+    for (size_t i = 0; i < config::kNumLevels; i++) {
+      std::cout << "level: " << i << " num files: " << current_->files_[i].size() << std::endl;
+    }
+    std::cout << "cloud score " << current_->cloud_score_ << std::endl; 
+    std::cout << "compaction_score " << current_->compaction_score_ << std::endl; 
+  }
   return current_->cloud_score_ > current_->compaction_score_;
 }
 
 CloudCompaction* VersionSet::PickCloudCompaction() {
-  CloudCompaction *c;
+  CloudCompaction *c = new CloudCompaction(options_);
   std::vector<FileMetaData*> last_level_files = current_->files_[config::kNumLevels-1];
   assert(last_level_files.empty()); 
   for (size_t i = 0; i < last_level_files.size(); i++) {
