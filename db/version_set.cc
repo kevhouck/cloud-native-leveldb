@@ -531,6 +531,34 @@ int Version::PickLevelForMemTableOutput(
   return level;
 }
 
+void Version::GetOverlappingCloudInputs(
+    const InternalKey* begin,
+    const InternalKey* end,
+    std::vector<CloudFile*>* inputs) {
+  
+  inputs->clear();
+  Slice user_begin, user_end;
+  if (begin != NULL) {
+    user_begin = begin->user_key();
+  }
+  if (end != NULL) {
+    user_end = end->user_key();
+  }
+  const Comparator* user_cmp = vset_->icmp_.user_comparator();
+  for (size_t i = 0; i < cloud_level_.files_.size(); ) {
+    CloudFile* f = cloud_level_.files_[i++];
+    const Slice file_start = f->smallest.user_key();
+    const Slice file_limit = f->largest.user_key();
+    if (begin != NULL && user_cmp->Compare(file_limit, user_begin) < 0) {
+      // "f" is completely before specified range; skip it
+    } else if (end != NULL && user_cmp->Compare(file_start, user_end) > 0) {
+      // "f" is completely after specified range; skip it
+    } else {
+      inputs->push_back(f);
+    }
+  }
+}
+
 // Store in "*inputs" all files in "level" that overlap [begin,end]
 void Version::GetOverlappingInputs(
     int level,
@@ -1378,7 +1406,7 @@ CloudCompaction* VersionSet::PickCloudCompaction() {
   InternalKey smallest, largest;
   GetRange(c->local_inputs_, &smallest, &largest);
 
-  // TODO find cloud files that we are compacting into
+  current_->GetOverlappingCloudInputs(&smallest, &largest, &c->cloud_inputs_);
   // TODO see if we can compact more files for free
 
   cloud_compact_pointer_ = largest.Encode().ToString();

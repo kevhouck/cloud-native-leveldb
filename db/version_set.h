@@ -102,6 +102,12 @@ class Version {
       const InternalKey* end,           // NULL means after all keys
       std::vector<FileMetaData*>* inputs);
 
+
+  void GetOverlappingCloudInputs(
+      const InternalKey* begin,
+      const InternalKey* end,
+      std::vector<CloudFile*>* inputs);
+
   // Returns true iff some file in the specified level overlaps
   // some part of [*smallest_user_key,*largest_user_key].
   // smallest_user_key==NULL represents a key smaller than all keys in the DB.
