@@ -7,11 +7,11 @@
 # to switch between compilation modes.
 
 # (A) Production use (optimized mode)
-OPT ?= -O2 -DNDEBUG
+# OPT ?= -O2 -DNDEBUG
 # (B) Debug mode, w/ full line-level debugging symbols
 # OPT ?= -g2
 # (C) Profiling mode: opt, but w/debugging symbols
-# OPT ?= -O2 -g2 -DNDEBUG
+OPT ?= -O2 -g2 -DNDEBUG
 #-----------------------------------------------
 
 # detect what platform we're building on
@@ -64,7 +64,7 @@ CFLAGS += -I. -I./include $(PLATFORM_CCFLAGS) $(OPT)
 CXXFLAGS += -I. -I./include $(PLATFORM_CXXFLAGS) $(OPT)
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
-LIBS += $(PLATFORM_LIBS)
+LIBS += $(PLATFORM_LIBS) -L./vendor -laws-cpp-sdk-core -laws-cpp-sdk-s3 -laws-cpp-sdk-lambda
 
 SIMULATOR_OUTDIR=out-ios-x86
 DEVICE_OUTDIR=out-ios-arm
