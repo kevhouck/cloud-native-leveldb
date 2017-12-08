@@ -24,7 +24,8 @@ Options::Options()
       max_file_size(2<<20),
       compression(kSnappyCompression),
       reuse_logs(false),
-      filter_policy(NULL) {
+      filter_policy(NULL),
+      use_cloud(false) {
 }
 
 }  // namespace leveldb

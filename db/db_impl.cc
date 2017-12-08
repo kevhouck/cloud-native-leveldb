@@ -146,6 +146,19 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
 
   versions_ = new VersionSet(dbname_, &options_, table_cache_,
                              &internal_comparator_);
+
+  if (options_.use_cloud) {
+    Aws::SDKOptions aws_options;
+    Aws::InitAPI(aws_options);
+    
+    Aws::Client::ClientConfiguration client_config;
+    client_config.region = options_.region;
+
+    s3_client_ = new Aws::S3::S3Client(client_config);
+    s3_bucket_ = options_.bucket;
+
+    lambda_client_ = new Aws::Lambda::LambdaClient(client_config);
+  }
 }
 
 DBImpl::~DBImpl() {
@@ -722,9 +735,13 @@ void DBImpl::BackgroundCompaction() {
         (m->done ? "(end)" : manual_end.DebugString().c_str()));
   } else if (versions_->ShouldCloudCompact()) {
     CloudCompaction *cc = versions_->PickCloudCompaction();
-    // TODO cloud compaction
-    if (LOG)
-      std::cout << "DoCloudCompaction()" << std::endl;
+    Status s = DoCloudCompactionWork(cc);
+    if (!s.ok()) { 
+      Log(options_.info_log,
+          "Compaction error: %s", s.ToString().c_str());
+    } else {
+      // TODO
+    }
     return;
   } else {
     c = versions_->PickCompaction();
@@ -909,6 +926,45 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
         out.number, out.file_size, out.smallest, out.largest);
   }
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
+}
+
+Status DBImpl::DoCloudCompactionWork(CloudCompaction *cc) {
+  if (LOG)
+    std::cout << "DoCloudCompaction()" << std::endl;
+
+  for (size_t i = 0; i < cc->local_inputs_.size(); i++) {
+    // Add local inputs to S3
+    FileMetaData* f = cc->local_inputs_[i];
+    std::string file_name = TableFileName(dbname_, f->number);
+    Aws::S3::Model::PutObjectRequest obj_req;
+    char buf[11] = { 0 };
+    sprintf(buf, "%06lu.ldb", f->number);
+    obj_req.WithBucket(s3_bucket_).WithKey(buf);
+    auto input_data = Aws::MakeShared<Aws::FStream>("PutObjectInputStream",
+      file_name.c_str(), std::ios_base::in | std::ios_base::binary);
+    obj_req.SetBody(input_data);
+    auto put_object_outcome = s3_client_->PutObject(obj_req);
+    if (put_object_outcome.IsSuccess()) {
+      std::cout << "Put successful" << std::endl;
+    } else {
+      std::cout << "Put failed" << std::endl;
+      return Status::IOError(Slice("S3 Object Put Request failed"));
+    }
+/*
+    // Create Lambda invocations for each compation
+    // TODO run each compaction async    
+    Aws::Lambda::Model::InvokeRequest invoke_req;
+    invoke_req.SetFunctionName("leveldb_compact");
+    auto invoke_res = lambda_client_->Invoke(invoke_req);
+    if (invoke_res.IsSuccess()) {
+      std::cout << "Invoke Successful" << std::endl;
+    } else {
+      std::cout << "Invoke Failed" << std::endl;
+      return Status::IOError(Slice("Lambda Invoke Request failed"));
+    }
+*/ 
+  }
+  return Status::OK();
 }
 
 Status DBImpl::DoCompactionWork(CompactionState* compact) {

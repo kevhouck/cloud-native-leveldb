@@ -7,6 +7,8 @@
 
 #include <stddef.h>
 
+#include <aws/core/Aws.h>
+
 namespace leveldb {
 
 class Cache;
@@ -155,6 +157,12 @@ struct Options {
 
   // Create an Options object with default values for all fields.
   Options();
+
+  bool use_cloud;
+
+  Aws::String region;
+
+  Aws::String bucket;  
 };
 
 // Options that control read operations

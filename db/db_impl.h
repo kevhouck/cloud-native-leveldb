@@ -8,12 +8,21 @@
 #include <deque>
 #include <set>
 #include "db/dbformat.h"
+#include "db/version_set.h" // TODO this is only do for cloud compation
 #include "db/log_writer.h"
 #include "db/snapshot.h"
 #include "leveldb/db.h"
 #include "leveldb/env.h"
 #include "port/port.h"
 #include "port/thread_annotations.h"
+
+#include <aws/core/Aws.h>
+#include <aws/s3/S3Client.h>
+#include <aws/lambda/LambdaClient.h>
+#include <aws/s3/model/PutObjectRequest.h>
+#include <aws/lambda/model/InvokeRequest.h>
+#include <iostream>
+#include <fstream>
 
 namespace leveldb {
 
@@ -112,7 +121,9 @@ class DBImpl : public DB {
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   Status DoCompactionWork(CompactionState* compact)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
-
+  Status DoCloudCompactionWork(CloudCompaction *cc);
+      EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  
   Status OpenCompactionOutputFile(CompactionState* compact);
   Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input);
   Status InstallCompactionResults(CompactionState* compact)
@@ -169,6 +180,11 @@ class DBImpl : public DB {
   ManualCompaction* manual_compaction_;
 
   VersionSet* versions_;
+
+  Aws::S3::S3Client* s3_client_;
+  Aws::String s3_bucket_;
+  
+  Aws::Lambda::LambdaClient* lambda_client_;
 
   // Have we encountered a background error in paranoid mode?
   Status bg_error_;
