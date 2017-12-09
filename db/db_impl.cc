@@ -33,6 +33,7 @@
 #include "util/coding.h"
 #include "util/logging.h"
 #include "util/mutexlock.h"
+#include "base64/base64.h"
 
 #define LOG 1
 
@@ -153,11 +154,12 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
     
     Aws::Client::ClientConfiguration client_config;
     client_config.region = options_.region;
-
     s3_client_ = new Aws::S3::S3Client(client_config);
     s3_bucket_ = options_.bucket;
 
-    lambda_client_ = new Aws::Lambda::LambdaClient(client_config);
+    Aws::Client::ClientConfiguration client_config_2;
+    client_config_2.region = options_.region;
+    lambda_client_ = new Aws::Lambda::LambdaClient(client_config_2);
   }
 }
 
@@ -196,6 +198,7 @@ Status DBImpl::NewDB() {
   new_db.SetLogNumber(0);
   new_db.SetNextFile(2);
   new_db.SetLastSequence(0);
+  new_db.SetNextCloudFile(1000000);
 
   const std::string manifest = DescriptorFileName(dbname_, 1);
   WritableFile* file;
@@ -950,20 +953,60 @@ Status DBImpl::DoCloudCompactionWork(CloudCompaction *cc) {
       std::cout << "Put failed" << std::endl;
       return Status::IOError(Slice("S3 Object Put Request failed"));
     }
-/*
-    // Create Lambda invocations for each compation
-    // TODO run each compaction async    
-    Aws::Lambda::Model::InvokeRequest invoke_req;
-    invoke_req.SetFunctionName("leveldb_compact");
-    auto invoke_res = lambda_client_->Invoke(invoke_req);
-    if (invoke_res.IsSuccess()) {
-      std::cout << "Invoke Successful" << std::endl;
-    } else {
-      std::cout << "Invoke Failed" << std::endl;
-      return Status::IOError(Slice("Lambda Invoke Request failed"));
-    }
-*/ 
+  } 
+  
+  // Create Lambda invocations for each compation
+  // TODO run each compaction async   
+  std::vector<FileMetaData> local_files_deref;
+  Aws::String local_file_names[cc->local_inputs_.size()];
+  for (size_t i = 0; i < cc->local_inputs_.size(); i++) {
+    local_files_deref.push_back(*cc->local_inputs_[i]);
+    local_file_names[i] = Aws::String(std::to_string((*cc->local_inputs_[i]).number).c_str());
   }
+  std::vector<CloudFile> cloud_files_deref;
+  Aws::String cloud_file_names[cc->cloud_inputs_.size()];
+  for (size_t i = 0; i < cc->cloud_inputs_.size(); i++) {
+    cloud_files_deref.push_back(*cc->cloud_inputs_[i]);
+    cloud_file_names[i] = Aws::String(std::to_string((*cc->cloud_inputs_[i]).obj_num).c_str());
+  }
+  json j;
+  j["local_files"] = local_files_deref;
+  j["cloud_files"] = cloud_files_deref;
+  j["next_cloud_file_num"] = versions_->NextCloudFileNumber(); 
+  Aws::String js = Aws::String(j.dump().c_str());
+  std::cout << js << std::endl;
+
+  Aws::Lambda::Model::InvokeRequest invoke_req;
+  invoke_req.SetFunctionName("leveldb_compact");
+  invoke_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
+  Aws::Utils::Json::JsonValue json_payload;
+  json_payload.WithString("data", base64_encode((const unsigned char*)js.c_str(), js.size()).c_str());
+  json_payload.WithArray("local_files", Aws::Utils::Array<Aws::String>(local_file_names, cc->local_inputs_.size()));
+  json_payload.WithArray("cloud_files", Aws::Utils::Array<Aws::String>(cloud_file_names, cc->cloud_inputs_.size()));
+  std::shared_ptr<Aws::IOStream> payload = Aws::MakeShared<Aws::StringStream>("FunctionTest");
+  *payload << json_payload.WriteReadable();
+  invoke_req.SetBody(payload);
+  invoke_req.SetContentType("application/json");
+  auto invoke_res = lambda_client_->Invoke(invoke_req);
+  if (invoke_res.IsSuccess()) {
+    std::cout << "Invoke Successful" << std::endl;
+  } else {
+    std::cout << "Invoke Failed" << std::endl;
+    std::cout << invoke_res.GetError().GetMessage() << std::endl;
+    return Status::IOError(Slice("Lambda Invoke Request failed"));
+  }
+  
+  auto &result = invoke_res.GetResult();
+  auto &result_payload = result.GetPayload();
+  Aws::Utils::Json::JsonValue json_result(result_payload);
+  std::string json_as_string = base64_decode(std::string(json_result.GetString("data").c_str()));
+  json res_json = json::parse(json_as_string);
+  std::vector<CloudFile> new_cloud_files = res_json;
+  std::vector<CloudFile*> new_cloud_files_ptrs;
+  for (size_t i = 0; i < new_cloud_files.size(); i++) {
+    new_cloud_files_ptrs.push_back(new CloudFile(new_cloud_files[i]));
+  }
+
   return Status::OK();
 }
 

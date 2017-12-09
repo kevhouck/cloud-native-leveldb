@@ -209,6 +209,8 @@ class VersionSet {
   // Allocate and return a new file number
   uint64_t NewFileNumber() { return next_file_number_++; }
 
+  uint64_t NextCloudFileNumber() { return next_cloud_file_number_; }
+
   // Arrange to reuse "file_number" unless a newer file number has
   // already been allocated.
   // REQUIRES: "file_number" was returned by a call to NewFileNumber().
@@ -339,7 +341,8 @@ class VersionSet {
   // Either an empty string, or a valid InternalKey.
   std::string compact_pointer_[config::kNumLevels];
   std::string cloud_compact_pointer_;
-  
+  uint64_t next_cloud_file_number_;
+
   // No copying allowed
   VersionSet(const VersionSet&);
   void operator=(const VersionSet&);

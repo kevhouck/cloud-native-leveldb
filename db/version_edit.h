@@ -11,6 +11,8 @@
 #include "db/dbformat.h"
 
 #include <iostream>
+#include "json/json.hpp"
+using json = nlohmann::json;
 
 #define LOG 1
 
@@ -29,6 +31,10 @@ struct FileMetaData {
   FileMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0) { }
 };
 
+void to_json(json& j, const FileMetaData& f);
+
+void from_json(const json& j, FileMetaData f);
+
 struct CloudFile {
   int refs;
   uint64_t file_size;         // File size in bytes
@@ -38,7 +44,18 @@ struct CloudFile {
   // TODO Add Bloom Filter
 
   CloudFile() : refs(0), file_size(0) { }
+
+  CloudFile(const CloudFile& cf) : refs(0) { 
+    file_size = cf.file_size;
+    smallest = cf.smallest;
+    largest = cf.largest;
+    obj_num = cf.obj_num;
+  }
 };
+
+void to_json(json& j, const CloudFile& cf);
+
+void from_json(const json& j, CloudFile& cf);
 
 class VersionEdit {
  public:
@@ -73,6 +90,12 @@ class VersionEdit {
       std::cout << "VersionEdit::SetNextFile()" << std::endl;
     has_next_file_number_ = true;
     next_file_number_ = num;
+  }
+  void SetNextCloudFile(uint64_t num) {
+    if (LOG)
+      std::cout << "VersionEdit::SetNextCloudFile()" << std::endl;
+    has_next_cloud_file_number_ = true;
+    next_cloud_file_number_ = num;
   }
   void SetLastSequence(SequenceNumber seq) {
     if (LOG)
@@ -157,6 +180,7 @@ class VersionEdit {
   bool has_prev_log_number_;
   bool has_next_file_number_;
   bool has_last_sequence_;
+  bool has_next_cloud_file_number_;
 
   std::vector< std::pair<int, InternalKey> > compact_pointers_;
   std::vector<InternalKey> cloud_compact_pointers_;
@@ -164,6 +188,7 @@ class VersionEdit {
   std::vector< std::pair<int, FileMetaData> > new_files_;
   std::vector<CloudFile> new_cloud_files_;
   std::vector<uint64_t> deleted_cloud_files_;
+  uint64_t next_cloud_file_number_;
 };
 
 }  // namespace leveldb

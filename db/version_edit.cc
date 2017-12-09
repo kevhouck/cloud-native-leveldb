@@ -28,6 +28,7 @@ enum Tag {
   kNewCloudFile         = 10,
   kDeletedCloudFile     = 11,
   kCloudCompactPointer  = 12,
+  kNextCloudFileNumber  = 13,
 };
 
 void VersionEdit::Clear() {
@@ -45,6 +46,37 @@ void VersionEdit::Clear() {
   has_last_sequence_ = false;
   deleted_files_.clear();
   new_files_.clear();
+  deleted_cloud_files_.clear();
+  new_cloud_files_.clear();
+  has_next_cloud_file_number_ = false;
+}
+
+void to_json(json& j, const CloudFile& cf) {
+  j["file_size"] =  cf.file_size;
+  j["smallest"] = cf.smallest.Encode().ToString();
+  j["largest"]  = cf.largest.Encode().ToString();
+  j["number"] = cf.obj_num;
+}
+
+void from_json(const json& j, CloudFile& cf) {
+  cf.file_size = j.at("file_size").get<uint64_t>();
+  cf.largest.DecodeFrom(Slice(j.at("largest").get<std::string>()));
+  cf.smallest.DecodeFrom(Slice(j.at("smallest").get<std::string>()));
+  cf.obj_num = j.at("number").get<uint64_t>();
+}
+
+void to_json(json& j, const FileMetaData& f) {
+  j["file_size"] =  f.file_size;
+  j["smallest"] = f.smallest.Encode().ToString();
+  j["largest"]  = f.largest.Encode().ToString();
+  j["number"] = f.number;
+}
+
+void from_json(const json& j, FileMetaData f) {
+  f.file_size = j.at("file_size").get<uint64_t>();
+  f.largest.DecodeFrom(Slice(j.at("largest").get<std::string>()));
+  f.smallest.DecodeFrom(Slice(j.at("smallest").get<std::string>()));
+  f.number = j.at("number").get<uint64_t>();
 }
 
 void VersionEdit::EncodeTo(std::string* dst) const {
@@ -70,6 +102,10 @@ void VersionEdit::EncodeTo(std::string* dst) const {
     PutVarint32(dst, kLastSequence);
     PutVarint64(dst, last_sequence_);
   }
+  if (has_next_cloud_file_number_) {
+    PutVarint32(dst, kNextCloudFileNumber);
+    PutVarint64(dst, next_cloud_file_number_);
+  } 
 
   for (size_t i = 0; i < compact_pointers_.size(); i++) {
     PutVarint32(dst, kCompactPointer);
@@ -180,6 +216,14 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
           has_prev_log_number_ = true;
         } else {
           msg = "previous log number";
+        }
+        break;
+      
+      case kNextCloudFileNumber:
+        if (GetVarint64(&input, &next_cloud_file_number_)) {
+          has_next_cloud_file_number_ = true;
+        } else {
+          msg = "next cloud file number";
         }
         break;
 

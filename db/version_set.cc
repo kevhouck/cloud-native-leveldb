@@ -864,6 +864,7 @@ VersionSet::VersionSet(const std::string& dbname,
       table_cache_(table_cache),
       icmp_(*cmp),
       next_file_number_(2),
+      next_cloud_file_number_(1000000),
       manifest_file_number_(0),  // Filled by Recover()
       last_sequence_(0),
       log_number_(0),
@@ -916,6 +917,7 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
   }
 
   edit->SetNextFile(next_file_number_);
+  edit->SetNextCloudFile(next_cloud_file_number_);
   edit->SetLastSequence(last_sequence_);
 
   Version* v = new Version(this);
@@ -936,6 +938,7 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
     assert(descriptor_file_ == NULL);
     new_manifest_file = DescriptorFileName(dbname_, manifest_file_number_);
     edit->SetNextFile(next_file_number_);
+    edit->SetNextCloudFile(next_cloud_file_number_);
     s = env_->NewWritableFile(new_manifest_file, &descriptor_file_);
     if (s.ok()) {
       descriptor_log_ = new log::Writer(descriptor_file_);
@@ -1017,8 +1020,10 @@ Status VersionSet::Recover(bool *save_manifest) {
   bool have_log_number = false;
   bool have_prev_log_number = false;
   bool have_next_file = false;
+  bool have_next_cloud_file = false;
   bool have_last_sequence = false;
   uint64_t next_file = 0;
+  uint64_t next_cloud_file = 0;
   uint64_t last_sequence = 0;
   uint64_t log_number = 0;
   uint64_t prev_log_number = 0;
@@ -1061,6 +1066,11 @@ Status VersionSet::Recover(bool *save_manifest) {
         have_next_file = true;
       }
 
+      if (edit.has_next_cloud_file_number_) {
+        next_cloud_file = edit.next_cloud_file_number_;
+        have_next_cloud_file = true;
+      }
+
       if (edit.has_last_sequence_) {
         last_sequence = edit.last_sequence_;
         have_last_sequence = true;
@@ -1095,6 +1105,7 @@ Status VersionSet::Recover(bool *save_manifest) {
     AppendVersion(v);
     manifest_file_number_ = next_file;
     next_file_number_ = next_file + 1;
+    next_cloud_file_number_ = next_cloud_file;
     last_sequence_ = last_sequence;
     log_number_ = log_number;
     prev_log_number_ = prev_log_number;
