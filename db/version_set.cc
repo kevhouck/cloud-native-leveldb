@@ -1286,7 +1286,7 @@ int VersionSet::NumLevelFiles(int level) const {
 
 const char* VersionSet::LevelSummary(LevelSummaryStorage* scratch) const {
   // Update code if kNumLevels changes
-  assert(config::kNumLevels == 7);
+  assert(config::kNumLevels == 5);
   snprintf(scratch->buffer, sizeof(scratch->buffer),
            "files[ %d %d %d %d %d %d %d ]",
            int(current_->files_[0].size()),
@@ -1297,6 +1297,22 @@ const char* VersionSet::LevelSummary(LevelSummaryStorage* scratch) const {
            int(current_->files_[5].size()),
            int(current_->files_[6].size()));
   return scratch->buffer;
+}
+
+const void VersionSet::LevelDetail() const {
+  std::vector<FileMetaData> files_deref[config::kNumLevels];
+  for (int i = 0; i < config::kNumLevels; i++) {
+    printf("level %d: nfile=%lu\n", i, current_->files_[i].size());
+    for (int j = 0; j < current_->files_[i].size(); j++) {
+      FileMetaData *md = current_->files_[i][j];
+      files_deref[i].push_back(*md);
+      printf("\tfile %d: number=%lu size=%lu smallest=`%s` largest=`%s`\n", j, md->number, md->file_size, md->smallest.DebugString().c_str(), md->largest.DebugString().c_str());
+    }
+  }
+
+  json j = files_deref;
+  std::string js = j.dump();
+  WriteStringToFile(env_, js, "/tmp/leveldb_merge.input");
 }
 
 uint64_t VersionSet::ApproximateOffsetOf(Version* v, const InternalKey& ikey) {
@@ -1443,8 +1459,8 @@ bool VersionSet::ShouldCloudCompact() {
     for (size_t i = 0; i < config::kNumLevels; i++) {
       std::cout << "level: " << i << " num files: " << current_->files_[i].size() << std::endl;
     }
-    std::cout << "cloud score " << current_->cloud_score_ << std::endl; 
-    std::cout << "compaction_score " << current_->compaction_score_ << std::endl; 
+    std::cout << "cloud score " << current_->cloud_score_ << std::endl;
+    std::cout << "compaction_score " << current_->compaction_score_ << std::endl;
   }
   return current_->cloud_score_ > current_->compaction_score_;
 }
@@ -1467,7 +1483,7 @@ CloudCompaction* VersionSet::PickCloudCompaction() {
     c->local_inputs_.push_back(*last_level_files[0]);
     selected_files_ptrs.push_back(last_level_files[0]);
   }
-      
+
   c->input_version_ = current_;
   c->input_version_->Ref(); // TODO actually use refs
 
@@ -1479,8 +1495,26 @@ CloudCompaction* VersionSet::PickCloudCompaction() {
 
   cloud_compact_pointer_ = largest.Encode().ToString();
   c->edit_.SetCloudCompactPointer(largest);
-  
+
   return c;
+}
+
+Iterator* VersionSet::MakeCloudInputIterator(std::vector<FileMetaData*> inputs[2]) {
+  ReadOptions options;
+  options.verify_checksums = options_->paranoid_checks;
+  options.fill_cache = false;
+
+  Iterator** list = new Iterator*[2];
+  int num = 0;
+  for (int which = 0; which < 2; which++) {
+    // Create concatenating iterator for the files from this level
+    list[num++] = NewTwoLevelIterator(
+        new Version::LevelFileNumIterator(icmp_, &inputs[which]),
+        &GetFileIterator, table_cache_, options);
+  }
+  Iterator* result = NewMergingIterator(&icmp_, list, num);
+  delete[] list;
+  return result;
 }
 
 Compaction* VersionSet::PickCompaction() {

@@ -544,6 +544,7 @@ class Benchmark {
       if (method != NULL) {
         RunBenchmark(num_threads, name, method);
       }
+      db_->Dump();
     }
   }
 

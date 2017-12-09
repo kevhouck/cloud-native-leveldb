@@ -41,6 +41,10 @@ namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
 
+void DBImpl::Dump() {
+  versions_->LevelDetail();
+}
+
 // Information kept for every waiting writer
 struct DBImpl::Writer {
   Status status;
@@ -913,7 +917,7 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
                                                current_bytes);
     s = iter->status();
     delete iter;
-    if (s.ok()) {
+    if (s.ok() && compact->compaction) {
       Log(options_.info_log,
           "Generated table #%llu@%d: %lld keys, %lld bytes",
           (unsigned long long) output_number,
@@ -1131,6 +1135,102 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   VersionSet::LevelSummaryStorage tmp;
   Log(options_.info_log,
       "compacted to: %s", versions_->LevelSummary(&tmp));
+  return status;
+}
+
+Status DBImpl::DoCloudCompactionWork(std::vector<FileMetaData*> inputs[2], std::vector<FileMetaData*> output, int next_file_number) {
+  CompactionState *compact = new CompactionState(NULL);
+  versions_->MarkFileNumberUsed(next_file_number-1);
+
+  if (snapshots_.empty()) {
+    compact->smallest_snapshot = versions_->LastSequence();
+  } else {
+    compact->smallest_snapshot = snapshots_.oldest()->number_;
+  }
+
+  Iterator* input = versions_->MakeCloudInputIterator(inputs);
+  input->SeekToFirst();
+  Status status;
+  ParsedInternalKey ikey;
+  std::string current_user_key;
+  bool has_current_user_key = false;
+  SequenceNumber last_sequence_for_key = kMaxSequenceNumber;
+  while (input->Valid()) {
+    Slice key = input->key();
+
+    // Handle key/value, add to state, etc.
+    bool drop = false;
+    if (!ParseInternalKey(key, &ikey)) {
+      // Do not hide error keys
+      current_user_key.clear();
+      has_current_user_key = false;
+      last_sequence_for_key = kMaxSequenceNumber;
+    } else {
+      if (!has_current_user_key ||
+          user_comparator()->Compare(ikey.user_key,
+                                     Slice(current_user_key)) != 0) {
+        // First occurrence of this user key
+        current_user_key.assign(ikey.user_key.data(), ikey.user_key.size());
+        has_current_user_key = true;
+        last_sequence_for_key = kMaxSequenceNumber;
+      }
+
+      if (last_sequence_for_key <= compact->smallest_snapshot) {
+        // Hidden by an newer entry for same user key
+        drop = true;    // (A)
+      } else if (ikey.type == kTypeDeletion &&
+                 ikey.sequence <= compact->smallest_snapshot) {
+        drop = true;
+      }
+
+      last_sequence_for_key = ikey.sequence;
+    }
+
+    if (!drop) {
+      // Open output file if necessary
+      if (compact->builder == NULL) {
+        status = OpenCompactionOutputFile(compact);
+        if (!status.ok()) {
+          break;
+        }
+      }
+      if (compact->builder->NumEntries() == 0) {
+        compact->current_output()->smallest.DecodeFrom(key);
+      }
+      compact->current_output()->largest.DecodeFrom(key);
+      compact->builder->Add(key, input->value());
+
+      // Close output file if it is big enough
+      if (compact->builder->FileSize() >= options_.max_file_size) {
+        status = FinishCompactionOutputFile(compact, input);
+        if (!status.ok()) {
+          break;
+        }
+      }
+    }
+
+    input->Next();
+  }
+
+  if (status.ok() && compact->builder != NULL) {
+    status = FinishCompactionOutputFile(compact, input);
+  }
+  if (status.ok()) {
+    status = input->status();
+  }
+  delete input;
+  delete compact;
+  input = NULL;
+  for (size_t i = 0; i < compact->outputs.size(); i++) {
+    const CompactionState::Output& out = compact->outputs[i];
+    FileMetaData f;
+    f.number = out.number;
+    f.file_size = out.file_size;
+    f.smallest = out.smallest;
+    f.largest = out.largest;
+    output.push_back(new FileMetaData(f));
+  }
+
   return status;
 }
 

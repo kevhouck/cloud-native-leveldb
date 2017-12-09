@@ -62,8 +62,10 @@ void to_json(json& j, const CloudFile& cf) {
 
 void from_json(const json& j, CloudFile& cf) {
   cf.file_size = j.at("file_size").get<uint64_t>();
-  cf.largest.DecodeFrom(Slice(base64_decode(j.at("largest").get<std::string>().c_str())));
-  cf.smallest.DecodeFrom(Slice(base64_decode(j.at("smallest").get<std::string>().c_str())));
+  std::string largest = j.at("largest").get<std::string>();
+  cf.largest.DecodeFrom(Slice(base64_decode(largest)));
+  std::string smallest = j.at("smallest").get<std::string>();
+  cf.smallest.DecodeFrom(Slice(base64_decode(smallest)));
   cf.obj_num = j.at("number").get<uint64_t>();
 }
 
@@ -78,8 +80,10 @@ void to_json(json& j, const FileMetaData& f) {
 
 void from_json(const json& j, FileMetaData& f) {
   f.file_size = j.at("file_size").get<uint64_t>();
-  f.largest.DecodeFrom(Slice(base64_decode(j.at("largest").get<std::string>().c_str())));
-  f.smallest.DecodeFrom(Slice(base64_decode(j.at("smallest").get<std::string>().c_str())));
+  std::string largest = j.at("largest").get<std::string>();
+  f.largest.DecodeFrom(Slice(base64_decode(largest)));
+  std::string smallest = j.at("smallest").get<std::string>();
+  f.smallest.DecodeFrom(Slice(base64_decode(smallest)));
   f.number = j.at("number").get<uint64_t>();
 }
 

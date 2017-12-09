@@ -7,4 +7,5 @@ out-shared/**/*.so.*
 *_test
 db_bench
 leveldbutil
+standalone_merger
 *.swp

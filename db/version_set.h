@@ -277,6 +277,8 @@ class VersionSet {
   // The caller should delete the iterator when no longer needed.
   Iterator* MakeInputIterator(Compaction* c);
 
+  Iterator* MakeCloudInputIterator(std::vector<FileMetaData*> inputs[2]);
+
   // Returns true iff some level needs a compaction.
   bool NeedsCompaction() const {
     Version* v = current_;
@@ -297,6 +299,7 @@ class VersionSet {
     char buffer[100];
   };
   const char* LevelSummary(LevelSummaryStorage* scratch) const;
+  const void LevelDetail() const;
 
  private:
   class Builder;

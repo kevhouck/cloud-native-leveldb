@@ -26,11 +26,14 @@ class CloudCompaction;
 class Version;
 class VersionEdit;
 class VersionSet;
+struct FileMetaData;
 
 class DBImpl : public DB {
  public:
   DBImpl(const Options& options, const std::string& dbname);
   virtual ~DBImpl();
+
+  virtual void Dump();
 
   // Implementations of the DB interface
   virtual Status Put(const WriteOptions&, const Slice& key, const Slice& value);
@@ -67,6 +70,8 @@ class DBImpl : public DB {
   // Samples are taken approximately once every config::kReadBytesPeriod
   // bytes.
   void RecordReadSample(Slice key);
+
+  Status DoCloudCompactionWork(std::vector<FileMetaData*> inputs[2], std::vector<FileMetaData*> output, int next_file_number);
 
  private:
   friend class DB;
