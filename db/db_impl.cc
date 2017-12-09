@@ -738,7 +738,7 @@ void DBImpl::BackgroundCompaction() {
         (m->done ? "(end)" : manual_end.DebugString().c_str()));
   } else if (versions_->ShouldCloudCompact()) {
     CloudCompaction *cc = versions_->PickCloudCompaction();
-    Status s = DoCloudCompactionWork(cc);
+    Status s = SendCloudCompactionWork(cc);
     if (!s.ok()) { 
       Log(options_.info_log,
           "Compaction error: %s", s.ToString().c_str());
@@ -931,9 +931,9 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
 }
 
-Status DBImpl::DoCloudCompactionWork(CloudCompaction *cc) {
+Status DBImpl::SendCloudCompactionWork(CloudCompaction *cc) {
   if (LOG)
-    std::cout << "DoCloudCompaction()" << std::endl;
+    std::cout << "SendCloudCompactionWork()" << std::endl;
 
   for (size_t i = 0; i < cc->local_inputs_.size(); i++) {
     // Add local inputs to S3

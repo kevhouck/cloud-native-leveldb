@@ -121,7 +121,7 @@ class DBImpl : public DB {
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   Status DoCompactionWork(CompactionState* compact)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
-  Status DoCloudCompactionWork(CloudCompaction *cc);
+  Status SendCloudCompactionWork(CloudCompaction *cc);
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   
   Status OpenCompactionOutputFile(CompactionState* compact);
