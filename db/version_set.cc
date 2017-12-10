@@ -1421,7 +1421,8 @@ bool VersionSet::ShouldCloudCompact() {
 }
 
 CloudCompaction* VersionSet::PickCloudCompaction() {
-  assert(!last_level_files.empty());
+  assert(!current_->files_[config::kNumLevels-1].empty());
+
   CloudCompaction *c = new CloudCompaction();
   std::vector<FileMetaData*> last_level_files = current_->files_[config::kNumLevels-1];
   std::vector<FileMetaData*> selected_files_ptrs;
