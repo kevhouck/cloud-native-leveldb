@@ -534,7 +534,7 @@ int Version::PickLevelForMemTableOutput(
 void Version::GetOverlappingCloudInputs(
     const InternalKey* begin,
     const InternalKey* end,
-    std::vector<CloudFile*>* inputs) {
+    std::vector<CloudFile>* inputs) {
   
   inputs->clear();
   Slice user_begin, user_end;
@@ -554,7 +554,7 @@ void Version::GetOverlappingCloudInputs(
     } else if (end != NULL && user_cmp->Compare(file_start, user_end) > 0) {
       // "f" is completely after specified range; skip it
     } else {
-      inputs->push_back(f);
+      inputs->push_back(*f);
     }
   }
 }
@@ -1403,25 +1403,28 @@ bool VersionSet::ShouldCloudCompact() {
 }
 
 CloudCompaction* VersionSet::PickCloudCompaction() {
-  CloudCompaction *c = new CloudCompaction(options_);
+  assert(!last_level_files.empty());
+  CloudCompaction *c = new CloudCompaction();
   std::vector<FileMetaData*> last_level_files = current_->files_[config::kNumLevels-1];
-  assert(last_level_files.empty()); 
+  std::vector<FileMetaData*> selected_files_ptrs;
   for (size_t i = 0; i < last_level_files.size(); i++) {
     FileMetaData* f = last_level_files[i];
     if (cloud_compact_pointer_.empty() || icmp_.Compare(f->largest.Encode(), cloud_compact_pointer_) > 0) {
-        c->local_inputs_.push_back(f);
+        c->local_inputs_.push_back(*f);
+        selected_files_ptrs.push_back(f);
         break;
     }
   }
   if (c->local_inputs_.empty()) {
-    c->local_inputs_.push_back(last_level_files[0]);
+    c->local_inputs_.push_back(*last_level_files[0]);
+    selected_files_ptrs.push_back(last_level_files[0]);
   }
       
   c->input_version_ = current_;
   c->input_version_->Ref(); // TODO actually use refs
 
   InternalKey smallest, largest;
-  GetRange(c->local_inputs_, &smallest, &largest);
+  GetRange(selected_files_ptrs, &smallest, &largest);
 
   current_->GetOverlappingCloudInputs(&smallest, &largest, &c->cloud_inputs_);
   // TODO see if we can compact more files for free

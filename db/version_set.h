@@ -106,7 +106,7 @@ class Version {
   void GetOverlappingCloudInputs(
       const InternalKey* begin,
       const InternalKey* end,
-      std::vector<CloudFile*>* inputs);
+      std::vector<CloudFile>* inputs);
 
   // Returns true iff some file in the specified level overlaps
   // some part of [*smallest_user_key,*largest_user_key].
@@ -350,27 +350,19 @@ class VersionSet {
 
 class CloudCompaction {
   public:
-    struct Output;
-    std::vector<Output> compactions_;
-
     Version* input_version_;
     VersionEdit edit_;
-    std::vector<FileMetaData*> local_inputs_;
-    std::vector<CloudFile*> cloud_inputs_;
+    std::vector<FileMetaData> local_inputs_;
+    std::vector<CloudFile> cloud_inputs_;
+    std::vector<CloudFile> new_cloud_files_;
     
-    CloudCompaction(const Options* options) { }
-};
+    CloudCompaction() { }
 
-class CloudCompaction::Output {
-  public:
-    enum compaction_state {
-      created = 1,
-      started = 2,
-      completed = 3,
-      failed = 4,
-    };
-    uint64_t obj_num;
-    compaction_state state = created;
+    ~CloudCompaction() {
+      if (input_version_ != NULL) {
+        input_version_->Unref();
+      }
+    }
 };
 
 // A Compaction encapsulates information about a compaction.

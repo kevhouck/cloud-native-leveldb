@@ -741,9 +741,16 @@ void DBImpl::BackgroundCompaction() {
     Status s = SendCloudCompactionWork(cc);
     if (!s.ok()) { 
       Log(options_.info_log,
-          "Compaction error: %s", s.ToString().c_str());
+          "Cloud Compaction error: %s", s.ToString().c_str());
     } else {
-      // TODO
+      s = FinishCloudCompaction(cc);
+      if (!s.ok()) {
+        Log(options_.info_log,
+            "Cloud New Version error: %s", s.ToString().c_str());
+      } else {
+        // Cloud Compaction Successful
+      }
+      delete cc;
     }
     return;
   } else {
@@ -853,6 +860,22 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
   return s;
 }
 
+Status DBImpl::FinishCloudCompaction(CloudCompaction* cc) {
+  if (LOG)
+    std::cout << "FinishCloudCompaction()" << std::endl;
+  VersionEdit edit;
+  for (size_t i = 0; i < cc->local_inputs_.size(); i++) {
+    edit.DeleteFile(config::kNumLevels - 1, cc->local_inputs_[i].number);
+  } 
+  for (size_t i = 0; i < cc->cloud_inputs_.size(); i++) {
+    edit.DeleteCloudFile(cc->cloud_inputs_[i].obj_num);
+  } 
+  for (size_t i = 0; i < cc->new_cloud_files_.size(); i++) {
+    edit.AddCloudFile(cc->new_cloud_files_[i]);
+  } 
+  return versions_->LogAndApply(&edit, &mutex_);
+}
+
 Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
                                           Iterator* input) {
   if (LOG)
@@ -937,11 +960,11 @@ Status DBImpl::SendCloudCompactionWork(CloudCompaction *cc) {
 
   for (size_t i = 0; i < cc->local_inputs_.size(); i++) {
     // Add local inputs to S3
-    FileMetaData* f = cc->local_inputs_[i];
-    std::string file_name = TableFileName(dbname_, f->number);
+    FileMetaData f = cc->local_inputs_[i];
+    std::string file_name = TableFileName(dbname_, f.number);
     Aws::S3::Model::PutObjectRequest obj_req;
     char buf[11] = { 0 };
-    sprintf(buf, "%06lu.ldb", f->number);
+    sprintf(buf, "%06lu.ldb", f.number);
     obj_req.WithBucket(s3_bucket_).WithKey(buf);
     auto input_data = Aws::MakeShared<Aws::FStream>("PutObjectInputStream",
       file_name.c_str(), std::ios_base::in | std::ios_base::binary);
@@ -957,24 +980,20 @@ Status DBImpl::SendCloudCompactionWork(CloudCompaction *cc) {
   
   // Create Lambda invocations for each compation
   // TODO run each compaction async   
-  std::vector<FileMetaData> local_files_deref;
   Aws::String local_file_names[cc->local_inputs_.size()];
   for (size_t i = 0; i < cc->local_inputs_.size(); i++) {
-    local_files_deref.push_back(*cc->local_inputs_[i]);
-    local_file_names[i] = Aws::String(std::to_string((*cc->local_inputs_[i]).number).c_str());
+    local_file_names[i] = Aws::String(std::to_string(cc->local_inputs_[i].number).c_str());
   }
-  std::vector<CloudFile> cloud_files_deref;
   Aws::String cloud_file_names[cc->cloud_inputs_.size()];
   for (size_t i = 0; i < cc->cloud_inputs_.size(); i++) {
-    cloud_files_deref.push_back(*cc->cloud_inputs_[i]);
-    cloud_file_names[i] = Aws::String(std::to_string((*cc->cloud_inputs_[i]).obj_num).c_str());
+    cloud_file_names[i] = Aws::String(std::to_string(cc->cloud_inputs_[i].obj_num).c_str());
   }
   json j;
-  j["local_files"] = local_files_deref;
-  j["cloud_files"] = cloud_files_deref;
+  j["local_files"] = cc->local_inputs_;
+  j["cloud_files"] = cc->cloud_inputs_;
   j["next_cloud_file_num"] = versions_->NextCloudFileNumber(); 
   Aws::String js = Aws::String(j.dump().c_str());
-  std::cout << js << std::endl;
+  std::cout << j.dump(4) << std::endl;
 
   Aws::Lambda::Model::InvokeRequest invoke_req;
   invoke_req.SetFunctionName("leveldb_compact");
@@ -1001,11 +1020,9 @@ Status DBImpl::SendCloudCompactionWork(CloudCompaction *cc) {
   Aws::Utils::Json::JsonValue json_result(result_payload);
   std::string json_as_string = base64_decode(std::string(json_result.GetString("data").c_str()));
   json res_json = json::parse(json_as_string);
+  std::cout << res_json.dump(4) << std::endl;
   std::vector<CloudFile> new_cloud_files = res_json;
-  std::vector<CloudFile*> new_cloud_files_ptrs;
-  for (size_t i = 0; i < new_cloud_files.size(); i++) {
-    new_cloud_files_ptrs.push_back(new CloudFile(new_cloud_files[i]));
-  }
+  cc->new_cloud_files_ = new_cloud_files;
 
   return Status::OK();
 }

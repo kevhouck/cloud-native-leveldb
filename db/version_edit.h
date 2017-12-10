@@ -132,17 +132,9 @@ class VersionEdit {
     new_files_.push_back(std::make_pair(level, f));
   }
 
-  void AddCloudFile(uint64_t name,
-               uint64_t file_size,
-               const InternalKey& smallest,
-               const InternalKey& largest) {
+  void AddCloudFile(CloudFile& f) {
     if (LOG)
       std::cout << "VersionEdit::AddCloudFile()" << std::endl;
-    CloudFile f;
-    f.obj_num = name;
-    f.file_size = file_size;
-    f.smallest = smallest;
-    f.largest = largest;
     new_cloud_files_.push_back(f);
   }
 
