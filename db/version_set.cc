@@ -85,6 +85,15 @@ Version::~Version() {
       }
     }
   }
+
+  for (size_t i = 0; i < cloud_level_.files_.size(); i++) {
+    CloudFile* cf = cloud_level_.files_[i];
+    assert(cf->refs > 0);
+    cf->refs--;
+    if (cf->refs <= 0) {
+      delete cf;
+    }
+  }
 }
 
 int FindFile(const InternalKeyComparator& icmp,
@@ -699,6 +708,13 @@ class VersionSet::Builder {
         }
       }
     }
+    for (size_t i = 0; i < cloud_level_.added_cloud_files.size(); i++) {
+      CloudFile* cf = cloud_level_.added_cloud_files[i];
+      cf->refs--;
+      if (cf->refs <= 0) {
+        delete cf;
+      }
+    }
     base_->Unref();
   }
 
@@ -755,6 +771,7 @@ class VersionSet::Builder {
 
     for (size_t i = 0; i < edit->new_cloud_files_.size(); i++) {
       CloudFile* f = new CloudFile(edit->new_cloud_files_[i]);
+      f->refs = 1;
       cloud_level_.added_cloud_files.push_back(f);
     }
   }
@@ -796,7 +813,8 @@ class VersionSet::Builder {
       for (std::vector<CloudFile*>::const_iterator cpos =  cloud_level_.added_cloud_files.begin();
           cpos !=  cloud_level_.added_cloud_files.end();
           ++cpos) {
-         base_->cloud_level_.files_.push_back(*cpos);
+        (*cpos)->refs++;
+        base_->cloud_level_.files_.push_back(*cpos);
       }
 
       // Transfer Cloud files from last version
