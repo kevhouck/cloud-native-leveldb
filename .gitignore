@@ -1,7 +1,7 @@
 build_config.mk
-*.a
 *.o
 *.dylib*
+out-shared/**/*.a
 out-shared/**/*.so
 out-shared/**/*.so.*
 *_test
