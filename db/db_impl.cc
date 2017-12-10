@@ -33,7 +33,6 @@
 #include "util/coding.h"
 #include "util/logging.h"
 #include "util/mutexlock.h"
-#include "base64/base64.h"
 
 #define LOG 1
 
@@ -149,17 +148,7 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
                              &internal_comparator_);
 
   if (options_.use_cloud) {
-    Aws::SDKOptions aws_options;
-    Aws::InitAPI(aws_options);
-    
-    Aws::Client::ClientConfiguration client_config;
-    client_config.region = options_.region;
-    s3_client_ = new Aws::S3::S3Client(client_config);
-    s3_bucket_ = options_.bucket;
-
-    Aws::Client::ClientConfiguration client_config_2;
-    client_config_2.region = options_.region;
-    lambda_client_ = new Aws::Lambda::LambdaClient(client_config_2);
+    cloud_manager_ = new CloudManager(options_.region, options_.bucket, dbname_, versions_);
   }
 }
 
@@ -176,6 +165,7 @@ DBImpl::~DBImpl() {
     env_->UnlockFile(db_lock_);
   }
 
+  delete cloud_manager_;
   delete versions_;
   if (mem_ != NULL) mem_->Unref();
   if (imm_ != NULL) imm_->Unref();
@@ -961,68 +951,17 @@ Status DBImpl::SendCloudCompactionWork(CloudCompaction *cc) {
   for (size_t i = 0; i < cc->local_inputs_.size(); i++) {
     // Add local inputs to S3
     FileMetaData f = cc->local_inputs_[i];
-    std::string file_name = TableFileName(dbname_, f.number);
-    Aws::S3::Model::PutObjectRequest obj_req;
-    char buf[11] = { 0 };
-    sprintf(buf, "%06lu.ldb", f.number);
-    obj_req.WithBucket(s3_bucket_).WithKey(buf);
-    auto input_data = Aws::MakeShared<Aws::FStream>("PutObjectInputStream",
-      file_name.c_str(), std::ios_base::in | std::ios_base::binary);
-    obj_req.SetBody(input_data);
-    auto put_object_outcome = s3_client_->PutObject(obj_req);
-    if (put_object_outcome.IsSuccess()) {
-      std::cout << "Put successful" << std::endl;
-    } else {
-      std::cout << "Put failed" << std::endl;
-      return Status::IOError(Slice("S3 Object Put Request failed"));
+    Status s = cloud_manager_->SendLocalFile(f);
+    if (!s.ok()) {
+      return s;
     }
   } 
   
   // Create Lambda invocations for each compation
-  // TODO run each compaction async   
-  Aws::String local_file_names[cc->local_inputs_.size()];
-  for (size_t i = 0; i < cc->local_inputs_.size(); i++) {
-    local_file_names[i] = Aws::String(std::to_string(cc->local_inputs_[i].number).c_str());
+  Status s = cloud_manager_->InvokeLambdaCompaction(cc);
+  if (!s.ok()) {
+    return s;
   }
-  Aws::String cloud_file_names[cc->cloud_inputs_.size()];
-  for (size_t i = 0; i < cc->cloud_inputs_.size(); i++) {
-    cloud_file_names[i] = Aws::String(std::to_string(cc->cloud_inputs_[i].obj_num).c_str());
-  }
-  json j;
-  j["local_files"] = cc->local_inputs_;
-  j["cloud_files"] = cc->cloud_inputs_;
-  j["next_cloud_file_num"] = versions_->NextCloudFileNumber(); 
-  Aws::String js = Aws::String(j.dump().c_str());
-  std::cout << j.dump(4) << std::endl;
-
-  Aws::Lambda::Model::InvokeRequest invoke_req;
-  invoke_req.SetFunctionName("leveldb_compact");
-  invoke_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
-  Aws::Utils::Json::JsonValue json_payload;
-  json_payload.WithString("data", base64_encode((const unsigned char*)js.c_str(), js.size()).c_str());
-  json_payload.WithArray("local_files", Aws::Utils::Array<Aws::String>(local_file_names, cc->local_inputs_.size()));
-  json_payload.WithArray("cloud_files", Aws::Utils::Array<Aws::String>(cloud_file_names, cc->cloud_inputs_.size()));
-  std::shared_ptr<Aws::IOStream> payload = Aws::MakeShared<Aws::StringStream>("FunctionTest");
-  *payload << json_payload.WriteReadable();
-  invoke_req.SetBody(payload);
-  invoke_req.SetContentType("application/json");
-  auto invoke_res = lambda_client_->Invoke(invoke_req);
-  if (invoke_res.IsSuccess()) {
-    std::cout << "Invoke Successful" << std::endl;
-  } else {
-    std::cout << "Invoke Failed" << std::endl;
-    std::cout << invoke_res.GetError().GetMessage() << std::endl;
-    return Status::IOError(Slice("Lambda Invoke Request failed"));
-  }
-  
-  auto &result = invoke_res.GetResult();
-  auto &result_payload = result.GetPayload();
-  Aws::Utils::Json::JsonValue json_result(result_payload);
-  std::string json_as_string = base64_decode(std::string(json_result.GetString("data").c_str()));
-  json res_json = json::parse(json_as_string);
-  std::cout << res_json.dump(4) << std::endl;
-  std::vector<CloudFile> new_cloud_files = res_json;
-  cc->new_cloud_files_ = new_cloud_files;
 
   return Status::OK();
 }
