@@ -8,7 +8,6 @@
 #include "leveldb/status.h"
 #include "db/version_set.h"
 #include "db/version_edit.h"
-#include "base64/base64.h"
 #include "db/filename.h"
 
 namespace leveldb {
@@ -74,7 +73,7 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc) {
   invoke_req.SetFunctionName("leveldb_compact");
   invoke_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
   Aws::Utils::Json::JsonValue json_payload;
-  json_payload.WithString("data", base64_encode((const unsigned char*)js.c_str(), js.size()).c_str());
+  json_payload.WithString("data", js);
   json_payload.WithArray("local_files", Aws::Utils::Array<Aws::String>(local_file_names, cc->local_inputs_.size()));
   json_payload.WithArray("cloud_files", Aws::Utils::Array<Aws::String>(cloud_file_names, cc->cloud_inputs_.size()));
   std::shared_ptr<Aws::IOStream> payload = Aws::MakeShared<Aws::StringStream>("FunctionTest");
@@ -93,7 +92,8 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc) {
   auto &result = invoke_res.GetResult();
   auto &result_payload = result.GetPayload();
   Aws::Utils::Json::JsonValue json_result(result_payload);
-  std::string json_as_string = base64_decode(std::string(json_result.GetString("data").c_str()));
+  Aws::String json_as_aws_string = json_result.GetString("data");
+  std::string json_as_string = std::string(json_as_aws_string.c_str(), json_as_aws_string.size());
   json res_json = json::parse(json_as_string);
   std::cout << res_json.dump(4) << std::endl;
   std::vector<CloudFile> new_cloud_files = res_json;
