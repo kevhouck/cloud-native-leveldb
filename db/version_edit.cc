@@ -76,7 +76,7 @@ void to_json(json& j, const FileMetaData& f) {
   j["number"] = f.number;
 }
 
-void from_json(const json& j, FileMetaData f) {
+void from_json(const json& j, FileMetaData& f) {
   f.file_size = j.at("file_size").get<uint64_t>();
   f.largest.DecodeFrom(Slice(base64_decode(j.at("largest").get<std::string>().c_str())));
   f.smallest.DecodeFrom(Slice(base64_decode(j.at("smallest").get<std::string>().c_str())));
