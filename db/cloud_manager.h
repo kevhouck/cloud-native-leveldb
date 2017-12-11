@@ -13,7 +13,7 @@ class CloudManager {
     Status SendLocalFile(FileMetaData& f);
     Status InvokeLambdaCompaction(CloudCompaction* cc);
     Status InvokeLambdaRandomGet();
-    Status FetchBloomFilter();
+    Status FetchBloomFilter(uint64_t cloud_file_num, Slice* s);
   
   private:
     std::string dbname_;

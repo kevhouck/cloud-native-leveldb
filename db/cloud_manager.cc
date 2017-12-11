@@ -4,6 +4,7 @@
 #include <aws/s3/S3Client.h>
 #include <aws/lambda/LambdaClient.h>
 #include <aws/s3/model/PutObjectRequest.h>
+#include <aws/s3/model/GetObjectRequest.h>
 #include <aws/lambda/model/InvokeRequest.h>
 #include "leveldb/status.h"
 #include "db/version_set.h"
@@ -106,8 +107,28 @@ Status CloudManager::InvokeLambdaRandomGet() {
 
 }
 
-Status CloudManager::FetchBloomFilter() {
+Status CloudManager::FetchBloomFilter(uint64_t cloud_file_num, Slice* s) {
+  char buf[12] = { 0 };
+  sprintf(buf, "%07lu.ldb", cloud_file_num);
+  std::string bloom_file_obj_name = "bloom" + std::string(buf, 12); 
 
+  Aws::S3::Model::GetObjectRequest obj_req;
+  obj_req.WithBucket(s3_bucket_).WithKey(Aws::String(bloom_file_obj_name.c_str()));
+  
+  auto get_outcome = s3_client_->GetObject(obj_req);
+  
+  if (!get_outcome.IsSuccess()) {
+    std::cout << "Bloom Filter Fetch Failed" << std::endl;
+    std::cout << get_outcome.GetError().GetMessage() << std::endl;
+    return Status::IOError(Slice("Bloom Filter Fetch Failed"));
+  } else {
+    std::cout << "Bloom Filter Fetch Successful" << std::endl;
+  }
+
+  std::ostringstream binbuf;
+  binbuf << get_outcome.GetResult().GetBody().rdbuf();
+  s = new Slice(binbuf.str());  
+  return Status::OK(); 
 }
 
 }
