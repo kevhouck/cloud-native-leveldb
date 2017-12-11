@@ -33,7 +33,7 @@ struct FileMetaData {
 
 void to_json(json& j, const FileMetaData& f);
 
-void from_json(const json& j, FileMetaData f);
+void from_json(const json& j, FileMetaData& f);
 
 struct CloudFile {
   int refs;
