@@ -20,6 +20,7 @@
 #include <vector>
 #include "db/dbformat.h"
 #include "db/version_edit.h"
+#include "db/cloud_manager.h"
 #include "port/port.h"
 #include "port/thread_annotations.h"
 
@@ -44,6 +45,10 @@ extern int FindFile(const InternalKeyComparator& icmp,
                     const std::vector<FileMetaData*>& files,
                     const Slice& key);
 
+extern int FindCloudFile(const InternalKeyComparator& icmp,
+                    const std::vector<CloudFile*>& cloud_files,
+                    const Slice& key);
+
 // Returns true iff some file in "files" overlaps the user key range
 // [*smallest,*largest].
 // smallest==NULL represents a key smaller than all keys in the DB.
@@ -59,7 +64,6 @@ extern bool SomeFileOverlapsRange(
 
 class CloudLevel {
   public:
-    Status Get(const ReadOptions&, const LookupKey& key, std::string* val);
     std::vector<CloudFile*> files_;
 };
 
@@ -78,7 +82,7 @@ class Version {
     int seek_file_level;
   };
   Status Get(const ReadOptions&, const LookupKey& key, std::string* val,
-             GetStats* stats);
+             GetStats* stats, CloudManager* cloud_manager);
 
   // Adds "stats" into the current state.  Returns true if a new
   // compaction may need to be triggered, false otherwise.

@@ -1,4 +1,3 @@
-#include "db/cloud_manager.h"
 #include <iostream>
 #include <fstream>
 #include <aws/s3/S3Client.h>
@@ -10,12 +9,12 @@
 #include "db/version_set.h"
 #include "db/version_edit.h"
 #include "db/filename.h"
+#include "base64/base64.h"
 
 namespace leveldb {
 
-CloudManager::CloudManager(Aws::String region, Aws::String bucket, std::string dbname, VersionSet* versions) {
+CloudManager::CloudManager(Aws::String region, Aws::String bucket, std::string dbname) {
   dbname_ = dbname;
-  versions_ = versions;
 
   Aws::InitAPI(aws_options);
   
@@ -34,6 +33,8 @@ CloudManager::~CloudManager() {
 }
 
 Status CloudManager::SendLocalFile(FileMetaData& f) {
+  if (LOG)
+    std::cout << "SendLocalFile()" << std::endl;
   std::string file_name = TableFileName(dbname_, f.number);
   char buf[11] = { 0 };
   sprintf(buf, "%06lu.ldb", f.number);
@@ -54,7 +55,9 @@ Status CloudManager::SendLocalFile(FileMetaData& f) {
   }
 }
 
-Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc) {
+Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* versions) {
+  if (LOG)
+    std::cout << "InvokeLambdaCompaction()" << std::endl;
   Aws::String local_file_names[cc->local_inputs_.size()];
   for (size_t i = 0; i < cc->local_inputs_.size(); i++) {
     local_file_names[i] = Aws::String(std::to_string(cc->local_inputs_[i].number).c_str());
@@ -66,7 +69,7 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc) {
   json j;
   j["local_files"] = cc->local_inputs_;
   j["cloud_files"] = cc->cloud_inputs_;
-  j["next_cloud_file_num"] = versions_->NextCloudFileNumber(); 
+  j["next_cloud_file_num"] = versions->NextCloudFileNumber(); 
   Aws::String js = Aws::String(j.dump().c_str());
   std::cout << j.dump(4) << std::endl;
 
@@ -77,17 +80,17 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc) {
   json_payload.WithString("data", js);
   json_payload.WithArray("local_files", Aws::Utils::Array<Aws::String>(local_file_names, cc->local_inputs_.size()));
   json_payload.WithArray("cloud_files", Aws::Utils::Array<Aws::String>(cloud_file_names, cc->cloud_inputs_.size()));
-  std::shared_ptr<Aws::IOStream> payload = Aws::MakeShared<Aws::StringStream>("FunctionTest");
+  std::shared_ptr<Aws::IOStream> payload = Aws::MakeShared<Aws::StringStream>("");
   *payload << json_payload.WriteReadable();
   invoke_req.SetBody(payload);
   invoke_req.SetContentType("application/json");
   auto invoke_res = lambda_client_->Invoke(invoke_req);
   if (invoke_res.IsSuccess()) {
-    std::cout << "Invoke Successful" << std::endl;
+    std::cout << "Compact Lambda Invoke Successful" << std::endl;
   } else {
-    std::cout << "Invoke Failed" << std::endl;
+    std::cout << "Compact Lambda Invoke Failed" << std::endl;
     std::cout << invoke_res.GetError().GetMessage() << std::endl;
-    return Status::IOError(Slice("Lambda Invoke Request failed"));
+    return Status::IOError(Slice("Compact Lambda Invoke Request failed"));
   }
   
   auto &result = invoke_res.GetResult();
@@ -103,11 +106,49 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc) {
   return Status::OK();
 }
 
-Status CloudManager::InvokeLambdaRandomGet() {
+Status CloudManager::InvokeLambdaRandomGet(Slice ikey, Slice** value) {
+  if (LOG)
+    std::cout << "InvokeLambdaRandomGet()" << std::endl;
+  std::string ikey_str = ikey.ToString();
+  json j;
+  j["ikey"] = base64_encode((const unsigned char*)ikey_str.c_str(), ikey_str.size());
+  Aws::String js = Aws::String(j.dump().c_str());
+  Aws::Lambda::Model::InvokeRequest invoke_req;
+  invoke_req.SetFunctionName("leveldb_get");
+  invoke_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
+  Aws::Utils::Json::JsonValue json_payload;
+  json_payload.WithString("data", js);
+  std::shared_ptr<Aws::IOStream> payload = Aws::MakeShared<Aws::StringStream>("");
+  *payload << json_payload.WriteReadable();
+  invoke_req.SetBody(payload);
+  invoke_req.SetContentType("application/json");
+  auto invoke_res = lambda_client_->Invoke(invoke_req);
+  if (invoke_res.IsSuccess()) {
+    std::cout << "Get Lambda Invoke Successful" << std::endl;
+  } else {
+    std::cout << "Get Lambda Invoke Failed" << std::endl;
+    std::cout << invoke_res.GetError().GetMessage() << std::endl;
+    return Status::IOError(Slice("Get Lambda Invoke Request failed"));
+  }
+  auto &result = invoke_res.GetResult();
+  auto &result_payload = result.GetPayload();
+  Aws::Utils::Json::JsonValue json_result(result_payload);
+  Aws::String json_as_aws_string = json_result.GetString("data");
+  std::string json_as_string = std::string(json_as_aws_string.c_str(), json_as_aws_string.size());
+  json res_json = json::parse(json_as_string);
 
+  std::string value_str = res_json.at("value").get<std::string>().c_str();
+  if (value_str == "") {
+    // The key was not actually in the cloud file
+    Status::NotFound(Slice());
+  }
+  *value = new Slice(base64_decode(value_str));
+  return Status::OK();
 }
 
 Status CloudManager::FetchBloomFilter(uint64_t cloud_file_num, Slice* s) {
+  if (LOG)
+    std::cout << "FetchBloomFilter()" << std::endl;
   char buf[12] = { 0 };
   sprintf(buf, "%07lu.ldb", cloud_file_num);
   std::string bloom_file_obj_name = "bloom" + std::string(buf, 12); 

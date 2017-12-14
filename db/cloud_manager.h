@@ -2,17 +2,20 @@
 #include <aws/s3/S3Client.h>
 #include <aws/lambda/LambdaClient.h>
 #include "leveldb/status.h"
-#include "db/version_set.h"
+#include "db/version_edit.h"
 
 namespace leveldb {
 
+class VersionSet;
+class CloudCompaction; 
+
 class CloudManager {
   public:
-    CloudManager(Aws::String region, Aws::String bucket, std::string dbname, VersionSet* versions);
+    CloudManager(Aws::String region, Aws::String bucket, std::string dbname);
     ~CloudManager();
     Status SendLocalFile(FileMetaData& f);
-    Status InvokeLambdaCompaction(CloudCompaction* cc);
-    Status InvokeLambdaRandomGet();
+    Status InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* versions);
+    Status InvokeLambdaRandomGet(Slice ikey, Slice **value);
     Status FetchBloomFilter(uint64_t cloud_file_num, Slice* s);
   
   private:

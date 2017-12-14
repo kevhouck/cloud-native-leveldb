@@ -14,7 +14,6 @@
 #include "leveldb/env.h"
 #include "port/port.h"
 #include "port/thread_annotations.h"
-#include "db/cloud_manager.h"
 #include <iostream>
 #include <fstream>
 
@@ -22,6 +21,8 @@ namespace leveldb {
 
 class MemTable;
 class TableCache;
+class CloudManager;
+class CloudCompaction;
 class Version;
 class VersionEdit;
 class VersionSet;

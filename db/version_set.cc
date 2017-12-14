@@ -117,6 +117,27 @@ int FindFile(const InternalKeyComparator& icmp,
   return right;
 }
 
+int FindCloudFile(const InternalKeyComparator& icmp,
+             const std::vector<CloudFile*>& cloud_files,
+             const Slice& key) {
+  uint32_t left = 0;
+  uint32_t right = cloud_files.size();
+  while (left < right) {
+    uint32_t mid = (left + right) / 2;
+    const CloudFile* f = cloud_files[mid];
+    if (icmp.InternalKeyComparator::Compare(f->largest.Encode(), key) < 0) {
+      // Key at "mid.largest" is < "target".  Therefore all
+      // files at or before "mid" are uninteresting.
+      left = mid + 1;
+    } else {
+      // Key at "mid.largest" is >= "target".  Therefore all files
+      // after "mid" are uninteresting.
+      right = mid;
+    }
+  }
+  return right;
+}
+
 static bool AfterFile(const Comparator* ucmp,
                       const Slice* user_key, const FileMetaData* f) {
   // NULL user_key occurs before all keys and is therefore never after *f
@@ -345,7 +366,8 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key,
 Status Version::Get(const ReadOptions& options,
                     const LookupKey& k,
                     std::string* value,
-                    GetStats* stats) {
+                    GetStats* stats,
+                    CloudManager* cloud_manager) {
   Slice ikey = k.internal_key();
   Slice user_key = k.user_key();
   const Comparator* ucmp = vset_->icmp_.user_comparator();
@@ -437,7 +459,14 @@ Status Version::Get(const ReadOptions& options,
       }
     }
   }
-
+  if (cloud_manager != NULL) {
+    // Look in cloud files
+    uint32_t index = FindCloudFile(vset_->icmp_, cloud_level_.files_, ikey);
+    if (index < cloud_level_.files_.size()) {
+      Slice* value_slice;
+      return cloud_manager->InvokeLambdaRandomGet(ikey, &value_slice); 
+    }
+  }
   return Status::NotFound(Slice());  // Use an empty error message for speed
 }
 

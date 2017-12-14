@@ -20,6 +20,7 @@
 #include "db/memtable.h"
 #include "db/table_cache.h"
 #include "db/version_set.h"
+#include "db/version_edit.h"
 #include "db/write_batch_internal.h"
 #include "leveldb/db.h"
 #include "leveldb/env.h"
@@ -143,12 +144,11 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
   // Reserve ten files or so for other uses and give the rest to TableCache.
   const int table_cache_size = options_.max_open_files - kNumNonTableCacheFiles;
   table_cache_ = new TableCache(dbname_, &options_, table_cache_size);
-
   versions_ = new VersionSet(dbname_, &options_, table_cache_,
                              &internal_comparator_);
 
   if (options_.use_cloud) {
-    cloud_manager_ = new CloudManager(options_.region, options_.bucket, dbname_, versions_);
+    cloud_manager_ = new CloudManager(options_.region, options_.bucket, dbname_);
   }
 }
 
@@ -958,7 +958,7 @@ Status DBImpl::SendCloudCompactionWork(CloudCompaction *cc) {
   } 
   
   // Create Lambda invocations for each compation
-  Status s = cloud_manager_->InvokeLambdaCompaction(cc);
+  Status s = cloud_manager_->InvokeLambdaCompaction(cc, versions_);
   if (!s.ok()) {
     return s;
   }
@@ -1222,7 +1222,7 @@ Status DBImpl::Get(const ReadOptions& options,
     } else if (imm != NULL && imm->Get(lkey, value, &s)) {
       // Done
     } else {
-      s = current->Get(options, lkey, value, &stats);
+      s = current->Get(options, lkey, value, &stats, cloud_manager_);
       have_stat_update = true;
     }
     mutex_.Lock();
