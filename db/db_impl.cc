@@ -951,7 +951,7 @@ Status DBImpl::SendCloudCompactionWork(CloudCompaction *cc) {
   for (size_t i = 0; i < cc->local_inputs_.size(); i++) {
     // Add local inputs to S3
     FileMetaData f = cc->local_inputs_[i];
-    Status s = cloud_manager_->SendLocalFile(f);
+    Status s = cloud_manager_->SendFile(f.number, false, dbname_);
     if (!s.ok()) {
       return s;
     }

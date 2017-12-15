@@ -32,15 +32,33 @@ CloudManager::~CloudManager() {
   Aws::ShutdownAPI(aws_options);
 }
 
-Status CloudManager::SendLocalFile(FileMetaData& f) {
+Status CloudManager::SendFile(uint64_t file_number, bool is_cloud, std::string base) {
   if (LOG)
     std::cout << "SendLocalFile()" << std::endl;
-  std::string file_name = TableFileName(dbname_, f.number);
-  char buf[11] = { 0 };
-  sprintf(buf, "%06lu.ldb", f.number);
+  std::string obj_name;
+  std::string file_name; 
+  if (base == dbname_) {
+    file_name = TableFileName(dbname_, file_number);
+    char buf[11] = { 0 };
+    sprintf(buf, "%06lu.ldb", file_number);
+    obj_name = std::string(buf, 11); 
+  } else if (base != dbname_ && is_cloud) {
+    char buf[12];
+    sprintf(buf, "%07lu.ldb", file_number);
+    obj_name = std::string(buf, 12); 
+    file_name = base + "/" + obj_name;
+  } else if (base != dbname_ && !is_cloud) {
+    char buf[11];
+    sprintf(buf, "%06lu.ldb", file_number);
+    obj_name = std::string(buf, 11); 
+    file_name = base + "/" + obj_name;
+  } else {
+    // invalid
+    return Status::InvalidArgument(Slice("db_base and cloud file is invalid argument"));
+  }
 
   Aws::S3::Model::PutObjectRequest obj_req;
-  obj_req.WithBucket(s3_bucket_).WithKey(buf);
+  obj_req.WithBucket(s3_bucket_).WithKey(Aws::String(obj_name.c_str()));
   auto input_data = Aws::MakeShared<Aws::FStream>("PutObjectInputStream",
     file_name.c_str(), std::ios_base::in | std::ios_base::binary);
   obj_req.SetBody(input_data);
@@ -53,6 +71,39 @@ Status CloudManager::SendLocalFile(FileMetaData& f) {
     std::cout << "Put failed" << std::endl;
     return Status::IOError(Slice("S3 Object Put Request failed"));
   }
+}
+
+Status CloudManager::FetchFile(uint64_t file_number, bool is_cloud) {
+  if (LOG)
+    std::cout << "FetchFile()" << std::endl;
+ 
+  std::string file_name; 
+  if (is_cloud) {
+    char buf[12];
+    sprintf(buf, "%07lu.ldb", file_number);
+    file_name = std::string(buf, 12); 
+  } else {
+    char buf[11];
+    sprintf(buf, "%06lu.ldb", file_number);
+    file_name = std::string(buf, 11); 
+  }
+
+  Aws::S3::Model::GetObjectRequest obj_req;
+  obj_req.WithBucket(s3_bucket_).WithKey(Aws::String(file_name.c_str()));
+  auto get_outcome = s3_client_->GetObject(obj_req);
+
+  if (!get_outcome.IsSuccess()) {
+    std::cout << "File Fetch Failed" << std::endl;
+    std::cout << get_outcome.GetError().GetMessage() << std::endl;
+    return Status::IOError(Slice("File Fetch Failed"));
+  } else {
+    std::cout << "File Fetch Successful" << std::endl;
+  }
+
+  Aws::OFStream local_file;
+  local_file.open(("/tmp/" + file_name).c_str(), std::ios::out | std::ios::binary);
+  local_file << get_outcome.GetResult().GetBody().rdbuf();
+  return Status::OK(); 
 }
 
 Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* versions) {

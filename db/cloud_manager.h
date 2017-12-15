@@ -13,7 +13,8 @@ class CloudManager {
   public:
     CloudManager(Aws::String region, Aws::String bucket, std::string dbname);
     ~CloudManager();
-    Status SendLocalFile(FileMetaData& f);
+    Status SendFile(uint64_t file_number, bool is_cloud, std::string base);
+    Status FetchFile(uint64_t file_number, bool is_cloud);
     Status InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* versions);
     Status InvokeLambdaRandomGet(Slice ikey, Slice **value);
     Status FetchBloomFilter(uint64_t cloud_file_num, Slice* s);
