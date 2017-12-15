@@ -73,7 +73,7 @@ Status CloudManager::SendFile(uint64_t file_number, bool is_cloud, std::string b
   }
 }
 
-Status CloudManager::FetchFile(uint64_t file_number, bool is_cloud) {
+Status CloudManager::FetchFile(uint64_t file_number, bool is_cloud, std::string base) {
   if (LOG)
     std::cout << "FetchFile()" << std::endl;
  
@@ -101,7 +101,7 @@ Status CloudManager::FetchFile(uint64_t file_number, bool is_cloud) {
   }
 
   Aws::OFStream local_file;
-  local_file.open(("/tmp/" + file_name).c_str(), std::ios::out | std::ios::binary);
+  local_file.open((base + file_name).c_str(), std::ios::out | std::ios::binary);
   local_file << get_outcome.GetResult().GetBody().rdbuf();
   return Status::OK(); 
 }
