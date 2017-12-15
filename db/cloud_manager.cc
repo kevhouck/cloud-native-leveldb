@@ -99,14 +99,6 @@ Status CloudManager::FetchFile(uint64_t file_number, std::string base) {
 Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* versions) {
   if (LOG)
     std::cout << "InvokeLambdaCompaction()" << std::endl;
-  Aws::String local_file_names[cc->local_inputs_.size()];
-  for (size_t i = 0; i < cc->local_inputs_.size(); i++) {
-    local_file_names[i] = Aws::String(std::to_string(cc->local_inputs_[i].number).c_str());
-  }
-  Aws::String cloud_file_names[cc->cloud_inputs_.size()];
-  for (size_t i = 0; i < cc->cloud_inputs_.size(); i++) {
-    cloud_file_names[i] = Aws::String(std::to_string(cc->cloud_inputs_[i].obj_num).c_str());
-  }
   json j;
   j["local_files"] = cc->local_inputs_;
   j["cloud_files"] = cc->cloud_inputs_;
@@ -119,8 +111,6 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* ver
   invoke_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
   Aws::Utils::Json::JsonValue json_payload;
   json_payload.WithString("data", js);
-  json_payload.WithArray("local_files", Aws::Utils::Array<Aws::String>(local_file_names, cc->local_inputs_.size()));
-  json_payload.WithArray("cloud_files", Aws::Utils::Array<Aws::String>(cloud_file_names, cc->cloud_inputs_.size()));
   std::shared_ptr<Aws::IOStream> payload = Aws::MakeShared<Aws::StringStream>("");
   *payload << json_payload.WriteReadable();
   invoke_req.SetBody(payload);
