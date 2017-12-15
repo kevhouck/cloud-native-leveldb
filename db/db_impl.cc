@@ -148,7 +148,7 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
                              &internal_comparator_);
 
   if (options_.use_cloud) {
-    cloud_manager_ = new CloudManager(options_.region, options_.bucket, dbname_);
+    cloud_manager_ = new CloudManager(options_.region, options_.bucket);
   }
 }
 
@@ -860,9 +860,14 @@ Status DBImpl::FinishCloudCompaction(CloudCompaction* cc) {
   for (size_t i = 0; i < cc->cloud_inputs_.size(); i++) {
     edit.DeleteCloudFile(cc->cloud_inputs_[i].obj_num);
   } 
+  uint64_t max_cloud_file_number = cc->new_cloud_files_[0].obj_num;
   for (size_t i = 0; i < cc->new_cloud_files_.size(); i++) {
+    if (max_cloud_file_number < cc->new_cloud_files_[i].obj_num) {
+      max_cloud_file_number = cc->new_cloud_files_[i].obj_num;
+    }
     edit.AddCloudFile(cc->new_cloud_files_[i]);
   } 
+  edit.SetNextCloudFile(max_cloud_file_number + 1);
   return versions_->LogAndApply(&edit, &mutex_);
 }
 
@@ -951,7 +956,7 @@ Status DBImpl::SendCloudCompactionWork(CloudCompaction *cc) {
   for (size_t i = 0; i < cc->local_inputs_.size(); i++) {
     // Add local inputs to S3
     FileMetaData f = cc->local_inputs_[i];
-    Status s = cloud_manager_->SendFile(f.number, false, dbname_);
+    Status s = cloud_manager_->SendFile(f.number, dbname_);
     if (!s.ok()) {
       return s;
     }

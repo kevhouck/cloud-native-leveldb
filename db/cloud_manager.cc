@@ -13,9 +13,7 @@
 
 namespace leveldb {
 
-CloudManager::CloudManager(Aws::String region, Aws::String bucket, std::string dbname) {
-  dbname_ = dbname;
-
+CloudManager::CloudManager(Aws::String region, Aws::String bucket) {
   Aws::InitAPI(aws_options);
   
   Aws::Client::ClientConfiguration client_config;
@@ -32,29 +30,21 @@ CloudManager::~CloudManager() {
   Aws::ShutdownAPI(aws_options);
 }
 
-Status CloudManager::SendFile(uint64_t file_number, bool is_cloud, std::string base) {
+Status CloudManager::SendFile(uint64_t file_number, std::string base) {
   if (LOG)
     std::cout << "SendLocalFile()" << std::endl;
   std::string obj_name;
   std::string file_name; 
-  if (base == dbname_) {
-    file_name = TableFileName(dbname_, file_number);
-    char buf[11] = { 0 };
-    sprintf(buf, "%06lu.ldb", file_number);
-    obj_name = std::string(buf, 11); 
-  } else if (base != dbname_ && is_cloud) {
+  if (file_number >= 1000000) {
     char buf[12];
     sprintf(buf, "%07lu.ldb", file_number);
     obj_name = std::string(buf, 12); 
     file_name = base + "/" + obj_name;
-  } else if (base != dbname_ && !is_cloud) {
+  } else {
     char buf[11];
     sprintf(buf, "%06lu.ldb", file_number);
     obj_name = std::string(buf, 11); 
     file_name = base + "/" + obj_name;
-  } else {
-    // invalid
-    return Status::InvalidArgument(Slice("db_base and cloud file is invalid argument"));
   }
 
   Aws::S3::Model::PutObjectRequest obj_req;
@@ -73,12 +63,12 @@ Status CloudManager::SendFile(uint64_t file_number, bool is_cloud, std::string b
   }
 }
 
-Status CloudManager::FetchFile(uint64_t file_number, bool is_cloud, std::string base) {
+Status CloudManager::FetchFile(uint64_t file_number, std::string base) {
   if (LOG)
     std::cout << "FetchFile()" << std::endl;
  
   std::string file_name; 
-  if (is_cloud) {
+  if (file_number >= 1000000) {
     char buf[12];
     sprintf(buf, "%07lu.ldb", file_number);
     file_name = std::string(buf, 12); 
