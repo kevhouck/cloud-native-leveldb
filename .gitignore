@@ -8,4 +8,6 @@ out-shared/**/*.so.*
 db_bench
 leveldbutil
 standalone_merger
-*.swp
+.*.swp
+.*.swo
+*.zip
