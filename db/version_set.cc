@@ -964,7 +964,6 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
   }
 
   edit->SetNextFile(next_file_number_);
-  edit->SetNextCloudFile(next_cloud_file_number_);
   edit->SetLastSequence(last_sequence_);
 
   Version* v = new Version(this);
@@ -1286,16 +1285,12 @@ int VersionSet::NumLevelFiles(int level) const {
 
 const char* VersionSet::LevelSummary(LevelSummaryStorage* scratch) const {
   // Update code if kNumLevels changes
-  assert(config::kNumLevels == 5);
+  assert(config::kNumLevels == 3);
   snprintf(scratch->buffer, sizeof(scratch->buffer),
-           "files[ %d %d %d %d %d %d %d ]",
+           "files[ %d %d %d ]",
            int(current_->files_[0].size()),
            int(current_->files_[1].size()),
-           int(current_->files_[2].size()),
-           int(current_->files_[3].size()),
-           int(current_->files_[4].size()),
-           int(current_->files_[5].size()),
-           int(current_->files_[6].size()));
+           int(current_->files_[2].size()));
   return scratch->buffer;
 }
 
