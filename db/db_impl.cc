@@ -169,7 +169,9 @@ DBImpl::~DBImpl() {
     env_->UnlockFile(db_lock_);
   }
 
-  delete cloud_manager_;
+  if (options_.use_cloud) {
+    delete cloud_manager_;
+  }
   delete versions_;
   if (mem_ != NULL) mem_->Unref();
   if (imm_ != NULL) imm_->Unref();
