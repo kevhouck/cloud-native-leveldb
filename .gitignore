@@ -11,3 +11,4 @@ standalone_merger
 .*.swp
 .*.swo
 *.zip
+*.pyc
