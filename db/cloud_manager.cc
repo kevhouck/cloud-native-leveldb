@@ -148,7 +148,7 @@ Status CloudManager::InvokeLambdaRandomGet(Slice user_key, CloudFile* cf, Slice*
   std::string user_key_str = user_key.ToString();
   json j;
   j["user_key"] = base64_encode((const unsigned char*)user_key_str.c_str(), user_key_str.size());
-  j["cloud_file"] = *cf;
+  j["number"] = cf->obj_num;
   Aws::String js = Aws::String(j.dump().c_str());
   Aws::Lambda::Model::InvokeRequest invoke_req;
   invoke_req.SetFunctionName("leveldb_get");
