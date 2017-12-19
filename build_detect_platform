@@ -64,6 +64,7 @@ PLATFORM_SHARED_LDFLAGS="-shared -Wl,-soname -Wl,"
 PLATFORM_SHARED_CFLAGS="-fPIC"
 PLATFORM_SHARED_VERSIONED=true
 PLATFORM_SSEFLAGS=
+VENDOR=
 
 MEMCMP_FLAG=
 if [ "$CXX" = "g++" ]; then
@@ -95,6 +96,7 @@ case "$TARGET_OS" in
         PLATFORM_LDFLAGS="-pthread"
         PORT_FILE=port/port_posix.cc
         PORT_SSE_FILE=port/port_posix_sse.cc
+        VENDOR=./vendor_"$(sed -n 's/^ID="\?\([^"]*\).*/\1/p' /etc/os-release)"
         ;;
     SunOS)
         PLATFORM=OS_SOLARIS
@@ -254,3 +256,4 @@ echo "PLATFORM_SHARED_CFLAGS=$PLATFORM_SHARED_CFLAGS" >> $OUTPUT
 echo "PLATFORM_SHARED_EXT=$PLATFORM_SHARED_EXT" >> $OUTPUT
 echo "PLATFORM_SHARED_LDFLAGS=$PLATFORM_SHARED_LDFLAGS" >> $OUTPUT
 echo "PLATFORM_SHARED_VERSIONED=$PLATFORM_SHARED_VERSIONED" >> $OUTPUT
+echo "VENDOR=$VENDOR" >> $OUTPUT
