@@ -91,7 +91,7 @@ Status CloudManager::FetchFile(uint64_t file_number, std::string base) {
   }
 
   Aws::OFStream local_file;
-  local_file.open((base + file_name).c_str(), std::ios::out | std::ios::binary);
+  local_file.open((base + "/" + file_name).c_str(), std::ios::out | std::ios::binary);
   local_file << get_outcome.GetResult().GetBody().rdbuf();
   return Status::OK(); 
 }
