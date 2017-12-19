@@ -243,6 +243,8 @@ class VersionSet {
   // Mark the specified file number as used.
   void MarkFileNumberUsed(uint64_t number);
 
+  void MarkCloudFileNumberUsed(uint64_t number);
+
   // Return the current log file number.
   uint64_t LogNumber() const { return log_number_; }
 

@@ -969,6 +969,7 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
     edit->SetPrevLogNumber(prev_log_number_);
   }
 
+  edit->SetNextCloudFile(next_cloud_file_number_);
   edit->SetNextFile(next_file_number_);
   edit->SetLastSequence(last_sequence_);
 
@@ -1202,6 +1203,12 @@ bool VersionSet::ReuseManifest(const std::string& dscname,
   descriptor_log_ = new log::Writer(descriptor_file_, manifest_size);
   manifest_file_number_ = manifest_number;
   return true;
+}
+
+void VersionSet::MarkCloudFileNumberUsed(uint64_t number) {
+  if (next_cloud_file_number_ <= number) {
+    next_cloud_file_number_ = number + 1;
+  }
 }
 
 void VersionSet::MarkFileNumberUsed(uint64_t number) {

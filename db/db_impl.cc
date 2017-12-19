@@ -881,7 +881,7 @@ Status DBImpl::FinishCloudCompaction(CloudCompaction* cc) {
     }
     edit.AddCloudFile(cc->new_cloud_files_[i]);
   } 
-  edit.SetNextCloudFile(max_cloud_file_number + 1);
+  versions_->MarkCloudFileNumberUsed(max_cloud_file_number);
   return versions_->LogAndApply(&edit, &mutex_);
 }
 
