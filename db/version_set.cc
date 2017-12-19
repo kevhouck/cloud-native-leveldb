@@ -804,6 +804,7 @@ class VersionSet::Builder {
       f->refs = 1;
       cloud_level_.added_cloud_files.push_back(f);
     }
+    std::cerr << "cloud_level_.added_cloud_files.size() " << cloud_level_.added_cloud_files.size() << std::endl;
   }
 
   // Save the current state in *v.
@@ -845,7 +846,7 @@ class VersionSet::Builder {
           cpos !=  cloud_level_.added_cloud_files.end();
           ++cpos) {
         (*cpos)->refs++;
-        base_->cloud_level_.files_.push_back(*cpos);
+        v->cloud_level_.files_.push_back(*cpos);
       }
 
       // Transfer Cloud files from last version
@@ -865,7 +866,8 @@ class VersionSet::Builder {
           // TODO should CloudFile objects be deallocated here?
         } else {
           // TODO why does leveldb incr refs here?
-          base_->cloud_level_.files_.push_back(*cpos);
+          (*cpos)->refs++;
+          v->cloud_level_.files_.push_back(*cpos);
         }
       }
 

@@ -136,7 +136,7 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* ver
   std::cerr << res_json.dump(4) << std::endl;
   std::vector<CloudFile> new_cloud_files = res_json;
   cc->new_cloud_files_ = new_cloud_files;
-
+  std::cerr << "cc->new_cloud_files_.size() " << cc->new_cloud_files_.size() << std::endl;
   return Status::OK();
 }
 
