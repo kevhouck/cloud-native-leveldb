@@ -141,13 +141,14 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* ver
   return Status::OK();
 }
 
-Status CloudManager::InvokeLambdaRandomGet(Slice ikey, Slice** value) {
+Status CloudManager::InvokeLambdaRandomGet(Slice user_key, CloudFile* cf, Slice** value) {
 #ifdef DEBUG_LOG
     std::cerr << "InvokeLambdaRandomGet()" << std::endl;
 #endif
-  std::string ikey_str = ikey.ToString();
+  std::string user_key_str = user_key.ToString();
   json j;
-  j["ikey"] = base64_encode((const unsigned char*)ikey_str.c_str(), ikey_str.size());
+  j["user_key"] = base64_encode((const unsigned char*)user_key_str.c_str(), user_key_str.size());
+  j["cloud_file"] = *cf;
   Aws::String js = Aws::String(j.dump().c_str());
   Aws::Lambda::Model::InvokeRequest invoke_req;
   invoke_req.SetFunctionName("leveldb_get");
@@ -172,12 +173,12 @@ Status CloudManager::InvokeLambdaRandomGet(Slice ikey, Slice** value) {
   Aws::String json_as_aws_string = json_result.GetString("data");
   std::string json_as_string = std::string(json_as_aws_string.c_str(), json_as_aws_string.size());
   json res_json = json::parse(json_as_string);
-
-  std::string value_str = res_json.at("value").get<std::string>().c_str();
-  if (value_str == "") {
+  uint32_t status_num = res_json.at("status").get<uint32_t>();
+  if (status_num != 0) {
     // The key was not actually in the cloud file
-    Status::NotFound(Slice());
+    return Status::NotFound(Slice());
   }
+  std::string value_str = res_json.at("value").get<std::string>().c_str();
   *value = new Slice(base64_decode(value_str));
   return Status::OK();
 }

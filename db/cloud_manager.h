@@ -16,7 +16,7 @@ class CloudManager {
     Status SendFile(uint64_t file_number, std::string base);
     Status FetchFile(uint64_t file_number, std::string base);
     Status InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* versions);
-    Status InvokeLambdaRandomGet(Slice ikey, Slice **value);
+    Status InvokeLambdaRandomGet(Slice user_key, CloudFile* cf, Slice **value);
     Status FetchBloomFilter(uint64_t cloud_file_num, Slice* s);
   
   private:

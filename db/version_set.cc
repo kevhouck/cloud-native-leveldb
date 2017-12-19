@@ -462,7 +462,7 @@ Status Version::Get(const ReadOptions& options,
     uint32_t index = FindCloudFile(vset_->icmp_, cloud_level_.files_, ikey);
     if (index < cloud_level_.files_.size()) {
       Slice* value_slice;
-      return cloud_manager->InvokeLambdaRandomGet(ikey, &value_slice); 
+      return cloud_manager->InvokeLambdaRandomGet(user_key, cloud_level_.files_[index], &value_slice); 
     }
   }
   return Status::NotFound(Slice());  // Use an empty error message for speed
