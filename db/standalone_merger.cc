@@ -22,7 +22,7 @@ void ParseInputs(std::string base, Env *env, CloudManager *cm, std::vector<FileM
     cm->FetchFile(local_files[i].number, base);
     inputs[0].push_back(new FileMetaData(local_files[i]));
   }
-  for (int i = 0; i < local_files.size(); i++) {
+  for (int i = 0; i < cloud_files.size(); i++) {
     cm->FetchFile(cloud_files[i].number, base);
     inputs[1].push_back(new FileMetaData(cloud_files[i]));
   }
