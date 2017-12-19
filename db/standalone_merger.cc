@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "db/cloud_manager.h"
 #include "db/db_impl.h"
 #include "db/version_edit.h"
 #include "leveldb/options.h"
