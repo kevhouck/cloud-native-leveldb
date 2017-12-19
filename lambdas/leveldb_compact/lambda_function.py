@@ -22,7 +22,7 @@ def lambda_handler(event, context):
     for fnum in cloud_files + local_files:
         s3.meta.client.download_file(os.environ['LEVELDB_BUCKET'],
                 '%06d.ldb' % fnum,
-                '%s/%6d.ldb' % (tmpdir, fnum))
+                '%s/%06d.ldb' % (tmpdir, fnum))
 
     res_json = sp.check_output(['./standalone_merger', os.environ['LEVELDB_REGION'], os.environ['LEVELDB_BUCKET'], tmpdir])
     logger.info('got result{}'.format(res_json))
