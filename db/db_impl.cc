@@ -1218,9 +1218,6 @@ Status DBImpl::DoCloudCompactionWork(std::vector<FileMetaData*> inputs[2], std::
   if (status.ok()) {
     status = input->status();
   }
-  delete input;
-  delete compact;
-  input = NULL;
   for (size_t i = 0; i < compact->outputs.size(); i++) {
     const CompactionState::Output& out = compact->outputs[i];
     FileMetaData f;
@@ -1230,6 +1227,9 @@ Status DBImpl::DoCloudCompactionWork(std::vector<FileMetaData*> inputs[2], std::
     f.largest = out.largest;
     output.push_back(new FileMetaData(f));
   }
+  delete input;
+  delete compact;
+  input = NULL;
 
   return status;
 }
