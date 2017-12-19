@@ -35,8 +35,6 @@
 #include "util/logging.h"
 #include "util/mutexlock.h"
 
-#define LOG 1
-
 namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
@@ -867,22 +865,21 @@ Status DBImpl::FinishCloudCompaction(CloudCompaction* cc) {
 #ifdef DEBUG_LOG
   std::cerr << "FinishCloudCompaction()" << std::endl;
 #endif
-  VersionEdit edit;
   for (size_t i = 0; i < cc->local_inputs_.size(); i++) {
-    edit.DeleteFile(config::kNumLevels - 1, cc->local_inputs_[i].number);
+    cc->edit_.DeleteFile(config::kNumLevels - 1, cc->local_inputs_[i].number);
   } 
   for (size_t i = 0; i < cc->cloud_inputs_.size(); i++) {
-    edit.DeleteCloudFile(cc->cloud_inputs_[i].obj_num);
+    cc->edit_.DeleteCloudFile(cc->cloud_inputs_[i].obj_num);
   } 
   uint64_t max_cloud_file_number = cc->new_cloud_files_[0].obj_num;
   for (size_t i = 0; i < cc->new_cloud_files_.size(); i++) {
     if (max_cloud_file_number < cc->new_cloud_files_[i].obj_num) {
       max_cloud_file_number = cc->new_cloud_files_[i].obj_num;
     }
-    edit.AddCloudFile(cc->new_cloud_files_[i]);
+    cc->edit_.AddCloudFile(cc->new_cloud_files_[i]);
   } 
   versions_->MarkCloudFileNumberUsed(max_cloud_file_number);
-  return versions_->LogAndApply(&edit, &mutex_);
+  return versions_->LogAndApply(&cc->edit_, &mutex_);
 }
 
 Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,

@@ -132,6 +132,7 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* ver
   Aws::Utils::Json::JsonValue json_result(result_payload);
   Aws::String json_as_aws_string = json_result.GetString("data");
   std::string json_as_string = std::string(json_as_aws_string.c_str(), json_as_aws_string.size());
+  std::cerr << json_as_string << std::endl;
   json res_json = json::parse(json_as_string);
   std::cerr << res_json.dump(4) << std::endl;
   std::vector<CloudFile> new_cloud_files = res_json;

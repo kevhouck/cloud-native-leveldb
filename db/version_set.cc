@@ -841,35 +841,6 @@ class VersionSet::Builder {
         MaybeAddFile(v, level, *base_iter);
       }
 
-      // Add Cloud files
-      for (std::vector<CloudFile*>::const_iterator cpos =  cloud_level_.added_cloud_files.begin();
-          cpos !=  cloud_level_.added_cloud_files.end();
-          ++cpos) {
-        (*cpos)->refs++;
-        v->cloud_level_.files_.push_back(*cpos);
-      }
-
-      // Transfer Cloud files from last version
-      for (std::vector<CloudFile*>::const_iterator cpos = base_->cloud_level_.files_.begin();
-          cpos != base_->cloud_level_.files_.end();
-          ++cpos) {
-        bool was_deleted = false;
-        for (std::vector<uint64_t>::const_iterator dpos = cloud_level_.deleted_cloud_files.begin();
-            dpos != cloud_level_.deleted_cloud_files.end();
-            ++dpos) {
-          if ((*cpos)->obj_num == *dpos) {
-            was_deleted = true;
-          }
-        }
-        if (was_deleted) {
-          // Do not add
-          // TODO should CloudFile objects be deallocated here?
-        } else {
-          // TODO why does leveldb incr refs here?
-          (*cpos)->refs++;
-          v->cloud_level_.files_.push_back(*cpos);
-        }
-      }
 
 #ifndef NDEBUG
       // Make sure there is no overlap in levels > 0
@@ -887,9 +858,45 @@ class VersionSet::Builder {
       }
 #endif
     }
+
+    // Add Cloud files
+    for (std::vector<CloudFile*>::const_iterator cpos =  cloud_level_.added_cloud_files.begin();
+        cpos !=  cloud_level_.added_cloud_files.end();
+        ++cpos) {
+      (*cpos)->refs++;
+      v->cloud_level_.files_.push_back(*cpos);
+    }
+
+    // Transfer Cloud files from last version
+    for (std::vector<CloudFile*>::const_iterator cpos = base_->cloud_level_.files_.begin();
+        cpos != base_->cloud_level_.files_.end();
+        ++cpos) {
+      bool was_deleted = false;
+      for (std::vector<uint64_t>::const_iterator dpos = cloud_level_.deleted_cloud_files.begin();
+          dpos != cloud_level_.deleted_cloud_files.end();
+          ++dpos) {
+        if ((*cpos)->obj_num == *dpos) {
+          was_deleted = true;
+        }
+      }
+      if (was_deleted) {
+        // Do not add
+        // TODO should CloudFile objects be deallocated here?
+      } else {
+        // TODO why does leveldb incr refs here?
+        (*cpos)->refs++;
+        v->cloud_level_.files_.push_back(*cpos);
+      }
+    }
+#ifdef DEBUG_LOG
+    std::cerr << "Builder::SaveTo() Done" << std::endl;
+#endif
   }
 
   void MaybeAddFile(Version* v, int level, FileMetaData* f) {
+#ifdef DEBUG_LOG
+    std::cerr << "Builder::MaybeAddFile()" << std::endl;
+#endif
     if (levels_[level].deleted_files.count(f->number) > 0) {
       // File is deleted: do nothing
     } else {
@@ -902,6 +909,9 @@ class VersionSet::Builder {
       f->refs++;
       files->push_back(f);
     }
+#ifdef DEBUG_LOG
+    std::cerr << "Builder::MaybeAddFile() Done" << std::endl;
+#endif
   }
 };
 
@@ -1505,6 +1515,9 @@ CloudCompaction* VersionSet::PickCloudCompaction() {
   cloud_compact_pointer_ = largest.Encode().ToString();
   c->edit_.SetCloudCompactPointer(largest);
 
+#ifdef DEBUG_LOG
+  std::cerr << "ShouldCloudCompact()" << std::endl;
+#endif
   return c;
 }
 

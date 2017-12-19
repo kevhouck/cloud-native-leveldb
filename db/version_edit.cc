@@ -53,8 +53,10 @@ void VersionEdit::Clear() {
 void to_json(json& j, const CloudFile& cf) {
   j["file_size"] =  cf.file_size;
   std::string smallest =  cf.smallest.Encode().ToString();
+  std::cerr << "smallest " << smallest << std::endl;
   j["smallest"] = base64_encode((const unsigned char*)smallest.c_str(), smallest.size());
   std::string largest = cf.largest.Encode().ToString();
+  std::cerr << "largest " << largest << std::endl;
   j["largest"]  = base64_encode((const unsigned char*)largest.c_str(), largest.size());
   j["number"] = cf.obj_num;
 }
@@ -71,8 +73,10 @@ void from_json(const json& j, CloudFile& cf) {
 void to_json(json& j, const FileMetaData& f) {
   j["file_size"] =  f.file_size;
   std::string smallest =  f.smallest.Encode().ToString();
+  std::cerr << "smallest " << smallest << std::endl;
   j["smallest"] = base64_encode((const unsigned char*)smallest.c_str(), smallest.size());
   std::string largest = f.largest.Encode().ToString();
+  std::cerr << "largest " << largest << std::endl;
   j["largest"]  = base64_encode((const unsigned char*)largest.c_str(), largest.size());
   j["number"] = f.number;
 }
