@@ -9,7 +9,7 @@ namespace leveldb {
 
 class Env;
 
-void ParseInputs(std::string base, Env *env, CloudManager *cm, std::vector<FileMetaData*> inputs[2], int *next_file_number) {
+void ParseInputs(std::string base, Env *env, std::vector<FileMetaData*> inputs[2], int *next_file_number) {
   Status s;
   std::string content;
   s = ReadFileToString(env, base + "/leveldb_merge.input", &content);
@@ -19,11 +19,9 @@ void ParseInputs(std::string base, Env *env, CloudManager *cm, std::vector<FileM
   *next_file_number = res_json["next_cloud_file_num"];
 
   for (int i = 0; i < local_files.size(); i++) {
-    cm->FetchFile(local_files[i].number, base);
     inputs[0].push_back(new FileMetaData(local_files[i]));
   }
   for (int i = 0; i < cloud_files.size(); i++) {
-    cm->FetchFile(cloud_files[i].number, base);
     inputs[1].push_back(new FileMetaData(cloud_files[i]));
   }
 }
@@ -35,18 +33,15 @@ int main(int argc, char *argv[]) {
   std::string base(argv[3]);
   leveldb::Options options;
 
-  leveldb::CloudManager cm(argv[1], argv[2]);
-
   std::vector<leveldb::FileMetaData*> inputs[2], output;
   std::vector<leveldb::FileMetaData> files_deref;
   int next_fn = -1;
-  leveldb::ParseInputs(base, options.env, &cm, inputs, &next_fn);
+  leveldb::ParseInputs(base, options.env, inputs, &next_fn);
 
   leveldb::DBImpl db(options, base);
   db.DoCloudCompactionWork(inputs, &output, next_fn);
 
   for (int i = 0; i < output.size(); i++) {
-    cm.SendFile(output[i]->number, base);
     files_deref.push_back(*output[i]);
   }
 
