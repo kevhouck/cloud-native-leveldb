@@ -17,6 +17,7 @@ CloudManager::CloudManager(Aws::String region, Aws::String bucket) {
   Aws::InitAPI(aws_options);
   
   Aws::Client::ClientConfiguration client_config;
+  client_config.requestTimeoutMs = 600000;
   client_config.region = region;
   s3_client_ = new Aws::S3::S3Client(client_config);
   s3_bucket_ = bucket;
@@ -31,8 +32,9 @@ CloudManager::~CloudManager() {
 }
 
 Status CloudManager::SendFile(uint64_t file_number, std::string base) {
-  if (LOG)
-    std::cout << "SendLocalFile()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "SendLocalFile()" << std::endl;
+#endif
   std::string obj_name;
   std::string file_name; 
   if (file_number >= 1000000) {
@@ -55,18 +57,18 @@ Status CloudManager::SendFile(uint64_t file_number, std::string base) {
   auto put_object_outcome = s3_client_->PutObject(obj_req);
 
   if (put_object_outcome.IsSuccess()) {
-    std::cout << "Put successful" << std::endl;
+    std::cerr << "Put successful" << std::endl;
     return Status::OK();
   } else {
-    std::cout << "Put failed" << std::endl;
+    std::cerr << "Put failed" << std::endl;
     return Status::IOError(Slice("S3 Object Put Request failed"));
   }
 }
 
 Status CloudManager::FetchFile(uint64_t file_number, std::string base) {
-  if (LOG)
-    std::cout << "FetchFile()" << std::endl;
- 
+#ifdef DEBUG_LOG
+    std::cerr << "FetchFile()" << std::endl;
+#endif
   std::string file_name; 
   if (file_number >= 1000000) {
     char buf[12];
@@ -83,11 +85,11 @@ Status CloudManager::FetchFile(uint64_t file_number, std::string base) {
   auto get_outcome = s3_client_->GetObject(obj_req);
 
   if (!get_outcome.IsSuccess()) {
-    std::cout << "File Fetch Failed" << std::endl;
-    std::cout << get_outcome.GetError().GetMessage() << std::endl;
+    std::cerr << "File Fetch Failed" << std::endl;
+    std::cerr << get_outcome.GetError().GetMessage() << std::endl;
     return Status::IOError(Slice("File Fetch Failed"));
   } else {
-    std::cout << "File Fetch Successful" << std::endl;
+    std::cerr << "File Fetch Successful" << std::endl;
   }
 
   Aws::OFStream local_file;
@@ -97,14 +99,15 @@ Status CloudManager::FetchFile(uint64_t file_number, std::string base) {
 }
 
 Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* versions) {
-  if (LOG)
-    std::cout << "InvokeLambdaCompaction()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "InvokeLambdaCompaction()" << std::endl;
+#endif
   json j;
   j["local_files"] = cc->local_inputs_;
   j["cloud_files"] = cc->cloud_inputs_;
   j["next_cloud_file_num"] = versions->NextCloudFileNumber(); 
   Aws::String js = Aws::String(j.dump().c_str());
-  std::cout << j.dump(4) << std::endl;
+  std::cerr << j.dump(4) << std::endl;
 
   Aws::Lambda::Model::InvokeRequest invoke_req;
   invoke_req.SetFunctionName("leveldb_compact");
@@ -117,10 +120,10 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* ver
   invoke_req.SetContentType("application/json");
   auto invoke_res = lambda_client_->Invoke(invoke_req);
   if (invoke_res.IsSuccess()) {
-    std::cout << "Compact Lambda Invoke Successful" << std::endl;
+    std::cerr << "Compact Lambda Invoke Successful" << std::endl;
   } else {
-    std::cout << "Compact Lambda Invoke Failed" << std::endl;
-    std::cout << invoke_res.GetError().GetMessage() << std::endl;
+    std::cerr << "Compact Lambda Invoke Failed" << std::endl;
+    std::cerr << invoke_res.GetError().GetMessage() << std::endl;
     return Status::IOError(Slice("Compact Lambda Invoke Request failed"));
   }
   
@@ -130,7 +133,7 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* ver
   Aws::String json_as_aws_string = json_result.GetString("data");
   std::string json_as_string = std::string(json_as_aws_string.c_str(), json_as_aws_string.size());
   json res_json = json::parse(json_as_string);
-  std::cout << res_json.dump(4) << std::endl;
+  std::cerr << res_json.dump(4) << std::endl;
   std::vector<CloudFile> new_cloud_files = res_json;
   cc->new_cloud_files_ = new_cloud_files;
 
@@ -138,8 +141,9 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* ver
 }
 
 Status CloudManager::InvokeLambdaRandomGet(Slice ikey, Slice** value) {
-  if (LOG)
-    std::cout << "InvokeLambdaRandomGet()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "InvokeLambdaRandomGet()" << std::endl;
+#endif
   std::string ikey_str = ikey.ToString();
   json j;
   j["ikey"] = base64_encode((const unsigned char*)ikey_str.c_str(), ikey_str.size());
@@ -155,10 +159,10 @@ Status CloudManager::InvokeLambdaRandomGet(Slice ikey, Slice** value) {
   invoke_req.SetContentType("application/json");
   auto invoke_res = lambda_client_->Invoke(invoke_req);
   if (invoke_res.IsSuccess()) {
-    std::cout << "Get Lambda Invoke Successful" << std::endl;
+    std::cerr << "Get Lambda Invoke Successful" << std::endl;
   } else {
-    std::cout << "Get Lambda Invoke Failed" << std::endl;
-    std::cout << invoke_res.GetError().GetMessage() << std::endl;
+    std::cerr << "Get Lambda Invoke Failed" << std::endl;
+    std::cerr << invoke_res.GetError().GetMessage() << std::endl;
     return Status::IOError(Slice("Get Lambda Invoke Request failed"));
   }
   auto &result = invoke_res.GetResult();
@@ -178,8 +182,9 @@ Status CloudManager::InvokeLambdaRandomGet(Slice ikey, Slice** value) {
 }
 
 Status CloudManager::FetchBloomFilter(uint64_t cloud_file_num, Slice* s) {
-  if (LOG)
-    std::cout << "FetchBloomFilter()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "FetchBloomFilter()" << std::endl;
+#endif
   char buf[12] = { 0 };
   sprintf(buf, "%07lu.ldb", cloud_file_num);
   std::string bloom_file_obj_name = "bloom" + std::string(buf, 12); 
@@ -190,11 +195,11 @@ Status CloudManager::FetchBloomFilter(uint64_t cloud_file_num, Slice* s) {
   auto get_outcome = s3_client_->GetObject(obj_req);
   
   if (!get_outcome.IsSuccess()) {
-    std::cout << "Bloom Filter Fetch Failed" << std::endl;
-    std::cout << get_outcome.GetError().GetMessage() << std::endl;
+    std::cerr << "Bloom Filter Fetch Failed" << std::endl;
+    std::cerr << get_outcome.GetError().GetMessage() << std::endl;
     return Status::IOError(Slice("Bloom Filter Fetch Failed"));
   } else {
-    std::cout << "Bloom Filter Fetch Successful" << std::endl;
+    std::cerr << "Bloom Filter Fetch Successful" << std::endl;
   }
 
   std::ostringstream binbuf;

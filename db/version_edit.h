@@ -14,8 +14,6 @@
 #include "json/json.hpp"
 using json = nlohmann::json;
 
-#define LOG 1
-
 namespace leveldb {
 
 class VersionSet;
@@ -60,8 +58,9 @@ void from_json(const json& j, CloudFile& cf);
 class VersionEdit {
  public:
   VersionEdit() { 
-    if (LOG)
-      std::cout << "VersionEdit()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit()" << std::endl;
+#endif
   
     Clear(); 
   }
@@ -74,44 +73,51 @@ class VersionEdit {
     comparator_ = name.ToString();
   }
   void SetLogNumber(uint64_t num) {
-    if (LOG)
-      std::cout << "VersionEdit::SetLogNumber()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::SetLogNumber()" << std::endl;
+#endif
     has_log_number_ = true;
     log_number_ = num;
   }
   void SetPrevLogNumber(uint64_t num) {
-    if (LOG)
-      std::cout << "VersionEdit::SetPrevLogNumber()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::SetPrevLogNumber()" << std::endl;
+#endif
     has_prev_log_number_ = true;
     prev_log_number_ = num;
   }
   void SetNextFile(uint64_t num) {
-    if (LOG)
-      std::cout << "VersionEdit::SetNextFile()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::SetNextFile()" << std::endl;
+#endif
     has_next_file_number_ = true;
     next_file_number_ = num;
   }
   void SetNextCloudFile(uint64_t num) {
-    if (LOG)
-      std::cout << "VersionEdit::SetNextCloudFile()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::SetNextCloudFile()" << std::endl;
+#endif
     has_next_cloud_file_number_ = true;
     next_cloud_file_number_ = num;
   }
   void SetLastSequence(SequenceNumber seq) {
-    if (LOG)
-      std::cout << "VersionEdit::SetLastSequence()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::SetLastSequence()" << std::endl;
+#endif
     has_last_sequence_ = true;
     last_sequence_ = seq;
   }
   void SetCompactPointer(int level, const InternalKey& key) {
-    if (LOG)
-      std::cout << "VersionEdit::SetCompactPointer()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::SetCompactPointer()" << std::endl;
+#endif
     compact_pointers_.push_back(std::make_pair(level, key));
   }
 
   void SetCloudCompactPointer(const InternalKey& key) {
-    if (LOG)
-      std::cout << "VersionEdit::SetCloudCompactPointer()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::SetCloudCompactPointer()" << std::endl;
+#endif
     cloud_compact_pointers_.push_back(key);
   }
   
@@ -122,8 +128,9 @@ class VersionEdit {
                uint64_t file_size,
                const InternalKey& smallest,
                const InternalKey& largest) {
-    if (LOG)
-      std::cout << "VersionEdit::AddFile()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::AddFile()" << std::endl;
+#endif
     FileMetaData f;
     f.number = file;
     f.file_size = file_size;
@@ -133,22 +140,25 @@ class VersionEdit {
   }
 
   void AddCloudFile(CloudFile& f) {
-    if (LOG)
-      std::cout << "VersionEdit::AddCloudFile()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::AddCloudFile()" << std::endl;
+#endif
     new_cloud_files_.push_back(f);
   }
 
 
   // Delete the specified "file" from the specified "level".
   void DeleteFile(int level, uint64_t file) {
-    if (LOG)
-      std::cout << "VersionEdit::DeleteFile()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::DeleteFile()" << std::endl;
+#endif
     deleted_files_.insert(std::make_pair(level, file));
   }
 
   void DeleteCloudFile(uint64_t name) {
-    if (LOG)
-      std::cout << "VersionEdit::DeleteCloudFile()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::DeleteCloudFile()" << std::endl;
+#endif
     deleted_cloud_files_.push_back(name);
   }
 

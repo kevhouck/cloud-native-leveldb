@@ -47,6 +47,5 @@ int main(int argc, char *argv[]) {
 
   json j = files_deref;
   std::cout << j.dump();
-
   return 0;
 }

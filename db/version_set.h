@@ -174,8 +174,9 @@ class Version {
         file_to_compact_level_(-1),
         compaction_score_(-1),
         compaction_level_(-1) {
-    if (LOG)
-      std::cout << "Version()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "Version()" << std::endl;
+#endif
   }
 
   ~Version();

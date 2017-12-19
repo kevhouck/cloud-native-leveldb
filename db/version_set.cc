@@ -20,8 +20,6 @@
 
 #include <iostream>
 
-#define LOG 1
-
 namespace leveldb {
 
 static int TargetFileSize(const Options* options) {
@@ -707,8 +705,9 @@ class VersionSet::Builder {
   Builder(VersionSet* vset, Version* base)
       : vset_(vset),
         base_(base) {
-    if (LOG)
-      std::cout << "Builder()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "Builder()" << std::endl;
+#endif
     base_->Ref();
     BySmallestKey cmp;
     cmp.internal_comparator = &vset_->icmp_;
@@ -718,8 +717,9 @@ class VersionSet::Builder {
   }
 
   ~Builder() {
-    if (LOG)
-      std::cout << "~Builder()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "~Builder()" << std::endl;
+#endif
     for (int level = 0; level < config::kNumLevels; level++) {
       const FileSet* added = levels_[level].added_files;
       std::vector<FileMetaData*> to_unref;
@@ -749,8 +749,9 @@ class VersionSet::Builder {
 
   // Apply all of the edits in *edit to the current state.
   void Apply(VersionEdit* edit) {
-    if (LOG)
-      std::cout << "VersionSet::Builder::Apply()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "VersionSet::Builder::Apply()" << std::endl;
+#endif
     // Update compaction pointers
     for (size_t i = 0; i < edit->compact_pointers_.size(); i++) {
       const int level = edit->compact_pointers_[i].first;
@@ -807,8 +808,9 @@ class VersionSet::Builder {
 
   // Save the current state in *v.
   void SaveTo(Version* v) {
-    if (LOG)
-      std::cout << "Builder::SaveTo()" << std::endl;
+#ifdef DEBUG_LOG
+    std::cerr << "Builder::SaveTo()" << std::endl;
+#endif
     BySmallestKey cmp;
     cmp.internal_comparator = &vset_->icmp_;
     for (int level = 0; level < config::kNumLevels; level++) {
@@ -931,8 +933,9 @@ VersionSet::~VersionSet() {
 }
 
 void VersionSet::AppendVersion(Version* v) {
-  if (LOG)
-    std::cout << "VersionSet::AppendVersion()" << std::endl;
+#ifdef DEBUG_LOG
+  std::cerr << "VersionSet::AppendVersion()" << std::endl;
+#endif
   // Make "v" current
   assert(v->refs_ == 0);
   assert(v != current_);
@@ -950,8 +953,9 @@ void VersionSet::AppendVersion(Version* v) {
 }
 
 Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
-  if (LOG)
-    std::cout << "VersionSet::LogAndApply()" << std::endl;
+#ifdef DEBUG_LOG
+  std::cerr << "VersionSet::LogAndApply()" << std::endl;
+#endif
   if (edit->has_log_number_) {
     assert(edit->log_number_ >= log_number_);
     assert(edit->log_number_ < next_file_number_);
@@ -1205,8 +1209,9 @@ void VersionSet::MarkFileNumberUsed(uint64_t number) {
 }
 
 void VersionSet::Finalize(Version* v) {
-  if (LOG)
-    std::cout << "VersionSet::Finalize()" << std::endl;
+#ifdef DEBUG_LOG
+  std::cerr << "VersionSet::Finalize()" << std::endl;
+#endif
   // Precomputed best level for next compaction
   int best_level = -1;
   double best_score = -1;
@@ -1449,14 +1454,15 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
 }
 
 bool VersionSet::ShouldCloudCompact() {
-  if (LOG) {
-    std::cout << "ShouldCloudCompact()" << std::endl;
+#ifdef DEBUG_LOG
+  std::cerr << "ShouldCloudCompact()" << std::endl;
     for (size_t i = 0; i < config::kNumLevels; i++) {
-      std::cout << "level: " << i << " num files: " << current_->files_[i].size() << std::endl;
+      std::cerr << "level: " << i << " num files: " << current_->files_[i].size() << std::endl;
     }
-    std::cout << "cloud score " << current_->cloud_score_ << std::endl;
-    std::cout << "compaction_score " << current_->compaction_score_ << std::endl;
+    std::cerr << "cloud score " << current_->cloud_score_ << std::endl;
+    std::cerr << "compaction_score " << current_->compaction_score_ << std::endl;
   }
+#endif
   return current_->cloud_score_ > current_->compaction_score_;
 }
 
