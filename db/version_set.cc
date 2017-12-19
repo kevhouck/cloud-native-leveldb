@@ -1465,12 +1465,11 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
 bool VersionSet::ShouldCloudCompact() {
 #ifdef DEBUG_LOG
   std::cerr << "ShouldCloudCompact()" << std::endl;
-    for (size_t i = 0; i < config::kNumLevels; i++) {
-      std::cerr << "level: " << i << " num files: " << current_->files_[i].size() << std::endl;
-    }
-    std::cerr << "cloud score " << current_->cloud_score_ << std::endl;
-    std::cerr << "compaction_score " << current_->compaction_score_ << std::endl;
+  for (size_t i = 0; i < config::kNumLevels; i++) {
+    std::cerr << "level: " << i << " num files: " << current_->files_[i].size() << std::endl;
   }
+  std::cerr << "cloud score " << current_->cloud_score_ << std::endl;
+  std::cerr << "compaction_score " << current_->compaction_score_ << std::endl;
 #endif
   return current_->cloud_score_ > current_->compaction_score_;
 }
