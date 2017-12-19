@@ -21,7 +21,8 @@ void ParseInputs(std::string base, Env *env, std::vector<FileMetaData*> inputs[2
   for (int i = 0; i < local_files.size(); i++) {
     inputs[0].push_back(new FileMetaData(local_files[i]));
   }
-  for (int i = 0; i < cloud_files.size(); i++) {
+  // FIXME: why I have to reverse the order??!!
+  for (int i = cloud_files.size()-1; i >= 0; i--) {
     inputs[1].push_back(new FileMetaData(cloud_files[i]));
   }
 }
