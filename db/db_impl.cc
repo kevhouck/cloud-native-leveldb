@@ -1138,7 +1138,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   return status;
 }
 
-Status DBImpl::DoCloudCompactionWork(std::vector<FileMetaData*> inputs[2], std::vector<FileMetaData*> output, int next_file_number) {
+Status DBImpl::DoCloudCompactionWork(std::vector<FileMetaData*> inputs[2], std::vector<FileMetaData*> *output, int next_file_number) {
   CompactionState *compact = new CompactionState(NULL);
   versions_->MarkFileNumberUsed(next_file_number-1);
 
@@ -1225,7 +1225,7 @@ Status DBImpl::DoCloudCompactionWork(std::vector<FileMetaData*> inputs[2], std::
     f.file_size = out.file_size;
     f.smallest = out.smallest;
     f.largest = out.largest;
-    output.push_back(new FileMetaData(f));
+    output->push_back(new FileMetaData(f));
   }
   delete input;
   delete compact;

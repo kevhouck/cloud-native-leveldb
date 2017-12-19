@@ -71,7 +71,7 @@ class DBImpl : public DB {
   // bytes.
   void RecordReadSample(Slice key);
 
-  Status DoCloudCompactionWork(std::vector<FileMetaData*> inputs[2], std::vector<FileMetaData*> output, int next_file_number);
+  Status DoCloudCompactionWork(std::vector<FileMetaData*> inputs[2], std::vector<FileMetaData*> *output, int next_file_number);
 
  private:
   friend class DB;

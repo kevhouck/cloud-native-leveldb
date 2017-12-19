@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
   leveldb::ParseInputs(base, options.env, &cm, inputs, &next_fn);
 
   leveldb::DBImpl db(options, base);
-  db.DoCloudCompactionWork(inputs, output, next_fn);
+  db.DoCloudCompactionWork(inputs, &output, next_fn);
 
   for (int i = 0; i < output.size(); i++) {
     cm.SendFile(output[i]->number, base);
