@@ -51,7 +51,8 @@ include build_config.mk
 UTILS = \
 	db/db_bench \
 	db/leveldbutil \
-	db/standalone_merger
+	db/standalone_merger\
+	db/table_reader
 
 # Put the object files in a subdirectory, but the application at the top of the object dir.
 PROGNAMES := $(notdir $(TESTS) $(UTILS))
@@ -308,6 +309,9 @@ $(STATIC_OUTDIR)/db_bench_tree_db:doc/bench/db_bench_tree_db.cc $(STATIC_LIBOBJE
 
 $(STATIC_OUTDIR)/standalone_merger:db/standalone_merger.cc $(STATIC_LIBOBJECTS)
 	$(CXX) $(LDFLAGS) $(CXXFLAGS) db/standalone_merger.cc $(STATIC_LIBOBJECTS) -o $@ $(LIBS)
+
+$(STATIC_OUTDIR)/table_reader:db/table_reader.cc $(STATIC_LIBOBJECTS)
+	$(CXX) $(LDFLAGS) $(CXXFLAGS) db/table_reader.cc $(STATIC_LIBOBJECTS) -o $@ $(LIBS)
 
 $(STATIC_OUTDIR)/leveldbutil:db/leveldbutil.cc $(STATIC_LIBOBJECTS)
 	$(CXX) $(LDFLAGS) $(CXXFLAGS) db/leveldbutil.cc $(STATIC_LIBOBJECTS) -o $@ $(LIBS)
