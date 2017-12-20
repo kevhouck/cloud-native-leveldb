@@ -146,8 +146,11 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* ver
   std::vector<CloudFile> new_cloud_files = res_json;
   cc->new_cloud_files_ = new_cloud_files;
   std::cerr << "cc->new_cloud_files_.size() " << cc->new_cloud_files_.size() << std::endl;
+  uint32_t download_time_us = json_result.GetDouble("download_time") * 1000000;
+  uint32_t merge_time_us = json_result.GetDouble("merge_time") * 1000000;
+  uint32_t upload_time_us = json_result.GetDouble("upload_time") * 1000000;
   std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
-  bench_file << "lambda_compaction: " << (end_time - start_time).count() << std::endl;
+  bench_file << "lambda_compaction: " << (end_time - start_time).count() << " download: " << download_time_us << " merge: " << merge_time_us << " upload: " << upload_time_us << std::endl;
   return Status::OK();
 }
 
@@ -185,8 +188,11 @@ Status CloudManager::InvokeLambdaRandomGet(Slice user_key, CloudFile* cf, Slice*
   uint32_t status_num = json_result.GetInteger("status");
   std::cerr << "status_num " << status_num << std::endl;
   
+  uint32_t download_time_us = json_result.GetDouble("download_time") * 1000000;
+  uint32_t command_time_us = json_result.GetDouble("command_time") * 1000000;
+
   std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
-  bench_file << "lambda_get: " << (end_time - start_time).count() << std::endl;
+  bench_file << "lambda_get: " << (end_time - start_time).count() << " download: " << download_time_us << " command: " << command_time_us << std::endl;
   if (status_num != 0) {
     // The key was not actually in the cloud file
     return Status::NotFound(Slice());

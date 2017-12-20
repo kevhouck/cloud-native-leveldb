@@ -747,7 +747,7 @@ void DBImpl::BackgroundCompaction() {
       s = FinishCloudCompaction(cc);
       std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
       std::chrono::high_resolution_clock::time_point start_time = cc->start_time;
-      bench_file << "cloud_compaction: " << (end_time - start_time).count() << std::endl;
+      bench_file << "cloud_compaction: " << (end_time - start_time).count() << " cloud_inputs: " << cc->cloud_inputs_.size() << " outputs: " << cc->new_cloud_files_.size() << std::endl;
       if (!s.ok()) {
         Log(options_.info_log,
             "Cloud New Version error: %s", s.ToString().c_str());
@@ -794,7 +794,7 @@ void DBImpl::BackgroundCompaction() {
 
     std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point start_time = c->start_time;
-    bench_file << "compaction: " << (end_time - start_time).count() << std::endl;
+    bench_file << "compaction: " << (end_time - start_time).count() << " inputs_0: " << c->num_input_files(0) << " inputs_1: " << c->num_input_files(1) << " outputs: " << c->edit()->new_files_.size() << std::endl;
   }
   delete c;
 

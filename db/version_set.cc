@@ -836,7 +836,9 @@ class VersionSet::Builder {
       f->refs = 1;
       cloud_level_.added_cloud_files.push_back(f);
     }
+#ifdef DEBUG_LOG
     std::cerr << "cloud_level_.added_cloud_files.size() " << cloud_level_.added_cloud_files.size() << std::endl;
+#endif
   }
 
   // Save the current state in *v.

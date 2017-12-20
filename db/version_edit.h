@@ -167,6 +167,7 @@ class VersionEdit {
 
   std::string DebugString() const;
 
+  std::vector< std::pair<int, FileMetaData> > new_files_; // TODO find a better way to log this
  private:
   friend class VersionSet;
 
@@ -187,7 +188,6 @@ class VersionEdit {
   std::vector< std::pair<int, InternalKey> > compact_pointers_;
   std::vector<InternalKey> cloud_compact_pointers_;
   DeletedFileSet deleted_files_;
-  std::vector< std::pair<int, FileMetaData> > new_files_;
   std::vector<CloudFile> new_cloud_files_;
   std::vector<uint64_t> deleted_cloud_files_;
   uint64_t next_cloud_file_number_;
