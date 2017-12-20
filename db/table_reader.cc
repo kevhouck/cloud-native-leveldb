@@ -4,6 +4,8 @@
 #include "leveldb/env.h"
 #include "leveldb/table.h"
 #include "base64/base64.h"
+#include "json/json.hpp"
+using json = nlohmann::json;
 
 namespace leveldb {
 namespace {
@@ -59,6 +61,10 @@ int main(int argc, char *argv[]) {
   saver.user_key = user_key;
   saver.value = &value;
   s = table->InternalGet(readOptions, user_key, &saver, leveldb::SaveValue);
-  std::cout << base64_encode((const unsigned char *) saver.value->c_str(), saver.value->size());
-  return saver.state;
+
+  json j;
+  j["status"] = saver.state;
+  j["value"] = base64_encode((const unsigned char *) saver.value->c_str(), saver.value->size());
+  std::cout << j.dump();
+  return 0;
 }

@@ -18,13 +18,6 @@ def lambda_handler(event, context):
     s3.meta.client.download_file(os.environ['LEVELDB_BUCKET'],
             local_file, file_path)
 
-    try:
-        value = sp.check_output(['./table_reader', file_path, event['user_key']])
-        logger.info('got result {}'.format(value))
-        return {'status': 0, 'value': value}
-    except sp.CalledProcessError as e:
-        if e.returncode > 0:
-            logger.info('record is not found, corrupted, or deleted (rc=%d): %s' % (e.returncode, e.output))
-        else:
-            logger.info('process kill by signal %d: %s' % (e.returncode, e.output))
-        return {'status': e.returncode, 'value': e.output}
+    res_json = sp.check_output(['./table_reader', file_path, event['user_key']])
+    logger.info('got result {}'.format(res_json))
+    return json.loads(res_json)
