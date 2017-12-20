@@ -66,7 +66,7 @@ CFLAGS += -I. -I./include $(PLATFORM_CCFLAGS) $(OPT)
 CXXFLAGS += -I. -I./include $(PLATFORM_CXXFLAGS) $(OPT)
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
-LIBS += $(PLATFORM_LIBS) -L$(VENDOR) -laws-cpp-sdk-core -laws-cpp-sdk-s3 -laws-cpp-sdk-lambda
+LIBS += $(PLATFORM_LIBS) -L$(VENDOR) -laws-cpp-sdk-core -laws-cpp-sdk-s3 -laws-cpp-sdk-lambda -lrt
 
 SIMULATOR_OUTDIR=out-ios-x86
 DEVICE_OUTDIR=out-ios-arm

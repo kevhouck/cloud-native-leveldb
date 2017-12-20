@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 #include <fstream>
 #include <aws/s3/S3Client.h>
 #include <aws/lambda/LambdaClient.h>
@@ -12,6 +13,8 @@
 #include "base64/base64.h"
 
 namespace leveldb {
+
+extern std::ofstream bench_file;
 
 CloudManager::CloudManager(Aws::String region, Aws::String bucket) {
   Aws::InitAPI(aws_options);
@@ -35,6 +38,8 @@ Status CloudManager::SendFile(uint64_t file_number, std::string base) {
 #ifdef DEBUG_LOG
     std::cerr << "SendLocalFile()" << std::endl;
 #endif
+  std::chrono::high_resolution_clock::time_point start_time = std::chrono::high_resolution_clock::now();
+
   std::string obj_name;
   std::string file_name; 
   if (file_number >= 1000000) {
@@ -58,6 +63,8 @@ Status CloudManager::SendFile(uint64_t file_number, std::string base) {
 
   if (put_object_outcome.IsSuccess()) {
     std::cerr << "Put successful" << std::endl;
+    std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
+    bench_file << "send_file: " << (end_time - start_time).count() << std::endl;
     return Status::OK();
   } else {
     std::cerr << "Put failed" << std::endl;
@@ -102,6 +109,7 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* ver
 #ifdef DEBUG_LOG
     std::cerr << "InvokeLambdaCompaction()" << std::endl;
 #endif
+  std::chrono::high_resolution_clock::time_point start_time = std::chrono::high_resolution_clock::now();
   json j;
   j["local_files"] = cc->local_inputs_;
   j["cloud_files"] = cc->cloud_inputs_;
@@ -138,6 +146,8 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* ver
   std::vector<CloudFile> new_cloud_files = res_json;
   cc->new_cloud_files_ = new_cloud_files;
   std::cerr << "cc->new_cloud_files_.size() " << cc->new_cloud_files_.size() << std::endl;
+  std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
+  bench_file << "lambda_compaction: " << (end_time - start_time).count() << std::endl;
   return Status::OK();
 }
 
@@ -145,6 +155,8 @@ Status CloudManager::InvokeLambdaRandomGet(Slice user_key, CloudFile* cf, Slice*
 #ifdef DEBUG_LOG
     std::cerr << "InvokeLambdaRandomGet()" << std::endl;
 #endif
+  std::chrono::high_resolution_clock::time_point start_time = std::chrono::high_resolution_clock::now();
+
   std::string user_key_str = user_key.ToString();
   std::string encoded_user_key = base64_encode((const unsigned char*)user_key_str.c_str(), user_key_str.size());
   Aws::Lambda::Model::InvokeRequest invoke_req;
@@ -172,6 +184,9 @@ Status CloudManager::InvokeLambdaRandomGet(Slice user_key, CloudFile* cf, Slice*
 
   uint32_t status_num = json_result.GetInteger("status");
   std::cerr << "status_num " << status_num << std::endl;
+  
+  std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
+  bench_file << "lambda_get: " << (end_time - start_time).count() << std::endl;
   if (status_num != 0) {
     // The key was not actually in the cloud file
     return Status::NotFound(Slice());

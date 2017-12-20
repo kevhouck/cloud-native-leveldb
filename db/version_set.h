@@ -15,6 +15,7 @@
 #ifndef STORAGE_LEVELDB_DB_VERSION_SET_H_
 #define STORAGE_LEVELDB_DB_VERSION_SET_H_
 
+#include <chrono>
 #include <map>
 #include <set>
 #include <vector>
@@ -365,6 +366,7 @@ class CloudCompaction {
     std::vector<FileMetaData> local_inputs_;
     std::vector<CloudFile> cloud_inputs_;
     std::vector<CloudFile> new_cloud_files_;
+    std::chrono::high_resolution_clock::time_point start_time;
     
     CloudCompaction() { }
 
@@ -417,6 +419,7 @@ class Compaction {
   // is successful.
   void ReleaseInputs();
 
+  std::chrono::high_resolution_clock::time_point start_time;
  private:
   friend class Version;
   friend class VersionSet;

@@ -17,10 +17,13 @@
 #include "table/two_level_iterator.h"
 #include "util/coding.h"
 #include "util/logging.h"
-
 #include <iostream>
+#include <fstream>
+#include <string>
 
 namespace leveldb {
+
+extern std::ofstream bench_file;
 
 static int TargetFileSize(const Options* options) {
  return options->max_file_size;
@@ -366,6 +369,8 @@ Status Version::Get(const ReadOptions& options,
                     std::string* value,
                     GetStats* stats,
                     CloudManager* cloud_manager) {
+  std::chrono::high_resolution_clock::time_point start_time = std::chrono::high_resolution_clock::now();
+
   Slice ikey = k.internal_key();
   Slice user_key = k.user_key();
   const Comparator* ucmp = vset_->icmp_.user_comparator();
@@ -443,16 +448,20 @@ Status Version::Get(const ReadOptions& options,
       if (!s.ok()) {
         return s;
       }
+      std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
       switch (saver.state) {
         case kNotFound:
           break;      // Keep searching in other files
         case kFound:
+          bench_file << "local_get: " << (end_time - start_time).count() << std::endl;
           return s;
         case kDeleted:
           s = Status::NotFound(Slice());  // Use empty error message for speed
+          bench_file << "local_get: " << (end_time - start_time).count() << std::endl;
           return s;
         case kCorrupt:
           s = Status::Corruption("corrupted key for ", user_key);
+          bench_file << "local_get: " << (end_time - start_time).count() << std::endl;
           return s;
       }
     }
@@ -465,8 +474,14 @@ Status Version::Get(const ReadOptions& options,
     }
     if (index < cloud_level_.files_.size()) {
       Slice* value_slice;
-      return cloud_manager->InvokeLambdaRandomGet(user_key, cloud_level_.files_[index], &value_slice); 
+      Status s = cloud_manager->InvokeLambdaRandomGet(user_key, cloud_level_.files_[index], &value_slice); 
+      std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
+      bench_file << "cloud_get: " << (end_time - start_time).count() << std::endl;
+      return s;
     }
+  } else {
+    std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
+    bench_file << "local_get: " << (end_time - start_time).count() << std::endl;
   }
   return Status::NotFound(Slice());  // Use an empty error message for speed
 }
@@ -1510,6 +1525,7 @@ CloudCompaction* VersionSet::PickCloudCompaction() {
   assert(!current_->files_[config::kNumLevels-1].empty());
 
   CloudCompaction *c = new CloudCompaction();
+  c->start_time = std::chrono::high_resolution_clock::now();
   std::vector<FileMetaData*> last_level_files = current_->files_[config::kNumLevels-1];
   std::vector<FileMetaData*> selected_files_ptrs;
   for (size_t i = 0; i < last_level_files.size(); i++) {
@@ -1596,6 +1612,9 @@ Compaction* VersionSet::PickCompaction() {
     return NULL;
   }
 
+  c->start_time = std::chrono::high_resolution_clock::now();
+
+  std::chrono::high_resolution_clock::time_point start_time;
   c->input_version_ = current_;
   c->input_version_->Ref();
 

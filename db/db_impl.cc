@@ -3,7 +3,6 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "db/db_impl.h"
-
 #include <algorithm>
 #include <set>
 #include <string>
@@ -36,6 +35,8 @@
 #include "util/mutexlock.h"
 
 namespace leveldb {
+
+std::ofstream bench_file;
 
 const int kNumNonTableCacheFiles = 10;
 
@@ -102,7 +103,7 @@ Options SanitizeOptions(const std::string& dbname,
   result.filter_policy = (src.filter_policy != NULL) ? ipolicy : NULL;
   ClipToRange(&result.max_open_files,    64 + kNumNonTableCacheFiles, 50000);
   ClipToRange(&result.write_buffer_size, 64<<10,                      1<<30);
-  ClipToRange(&result.max_file_size,     1<<12,                       1<<30);
+  ClipToRange(&result.max_file_size,     1<<20,                       1<<30);
   ClipToRange(&result.block_size,        1<<10,                       4<<20);
   if (result.info_log == NULL) {
     // Open a log file in the same directory as the db
@@ -143,6 +144,7 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
       manual_compaction_(NULL) {
   has_imm_.Release_Store(NULL);
 
+  bench_file = std::ofstream("bench.log");
   // Reserve ten files or so for other uses and give the rest to TableCache.
   const int table_cache_size = options_.max_open_files - kNumNonTableCacheFiles;
   table_cache_ = new TableCache(dbname_, &options_, table_cache_size);
@@ -743,6 +745,9 @@ void DBImpl::BackgroundCompaction() {
           "Cloud Compaction error: %s", s.ToString().c_str());
     } else {
       s = FinishCloudCompaction(cc);
+      std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
+      std::chrono::high_resolution_clock::time_point start_time = cc->start_time;
+      bench_file << "cloud_compaction: " << (end_time - start_time).count() << std::endl;
       if (!s.ok()) {
         Log(options_.info_log,
             "Cloud New Version error: %s", s.ToString().c_str());
@@ -786,6 +791,10 @@ void DBImpl::BackgroundCompaction() {
     CleanupCompaction(compact);
     c->ReleaseInputs();
     DeleteObsoleteFiles();
+
+    std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point start_time = c->start_time;
+    bench_file << "compaction: " << (end_time - start_time).count() << std::endl;
   }
   delete c;
 
@@ -1143,6 +1152,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   if (!status.ok()) {
     RecordBackgroundError(status);
   }
+
   VersionSet::LevelSummaryStorage tmp;
   Log(options_.info_log,
       "compacted to: %s", versions_->LevelSummary(&tmp));
