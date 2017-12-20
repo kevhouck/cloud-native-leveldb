@@ -888,7 +888,13 @@ Status DBImpl::FinishCloudCompaction(CloudCompaction* cc) {
     cc->edit_.AddCloudFile(cc->new_cloud_files_[i]);
   } 
   versions_->MarkCloudFileNumberUsed(max_cloud_file_number);
-  return versions_->LogAndApply(&cc->edit_, &mutex_);
+  Status s = versions_->LogAndApply(&cc->edit_, &mutex_);
+  if (cc->input_version_ != NULL) {
+    cc->input_version_->Unref();
+    cc->input_version_ = NULL;
+  }
+  DeleteObsoleteFiles();
+  return s;
 }
 
 Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
