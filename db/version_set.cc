@@ -685,6 +685,20 @@ class VersionSet::Builder {
     }
   };
 
+  struct BySmallestKeyCloud {
+    const InternalKeyComparator* internal_comparator;
+
+    bool operator()(CloudFile* f1, CloudFile* f2) const {
+      int r = internal_comparator->Compare(f1->smallest, f2->smallest);
+      if (r != 0) {
+        return (r < 0);
+      } else {
+        // Break ties by file number
+        return (f1->obj_num < f2->obj_num);
+      }
+    }
+  };
+
   typedef std::set<FileMetaData*, BySmallestKey> FileSet;
   struct LevelState {
     std::set<uint64_t> deleted_files;
@@ -888,6 +902,10 @@ class VersionSet::Builder {
         v->cloud_level_.files_.push_back(*cpos);
       }
     }
+    
+    BySmallestKeyCloud ccmp;
+    // TODO still need to determine where it is being reversed when sending to lambda
+    sort(v->cloud_level_.files_.begin(), v->cloud_level_.files_.begin(), ccmp);
 #ifdef DEBUG_LOG
     std::cerr << "Builder::SaveTo() Done" << std::endl;
 #endif
