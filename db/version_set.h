@@ -285,8 +285,11 @@ class VersionSet {
 
   // Returns true iff some level needs a compaction.
   bool NeedsCompaction() const {
+#ifdef DEBUG_LOG
+    std::cerr << "compaction score " << current_->compaction_score_ << std::endl;
+#endif
     Version* v = current_;
-    return (v->compaction_score_ >= 1) || (v->file_to_compact_ != NULL);
+    return (v->compaction_score_ >= 1) || (v->cloud_score_ >= 1) || (v->file_to_compact_ != NULL);
   }
 
   // Add all files listed in any live version to *live.

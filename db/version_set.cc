@@ -47,7 +47,7 @@ static double MaxBytesForLevel(const Options* options, int level) {
   // the level-0 compaction threshold based on number of files.
 
   // Result for both level-0 and level-1
-  double result = 10. * 40960.0;
+  double result = 10. * 1048576.0;
   while (level > 1) {
     result *= 10;
     level--;
@@ -453,15 +453,15 @@ Status Version::Get(const ReadOptions& options,
         case kNotFound:
           break;      // Keep searching in other files
         case kFound:
-          bench_file << "local_get: " << (end_time - start_time).count() << std::endl;
+          bench_file << "local_get: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << std::endl;
           return s;
         case kDeleted:
           s = Status::NotFound(Slice());  // Use empty error message for speed
-          bench_file << "local_get: " << (end_time - start_time).count() << std::endl;
+          bench_file << "local_get: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << std::endl;
           return s;
         case kCorrupt:
           s = Status::Corruption("corrupted key for ", user_key);
-          bench_file << "local_get: " << (end_time - start_time).count() << std::endl;
+          bench_file << "local_get: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << std::endl;
           return s;
       }
     }
@@ -476,12 +476,12 @@ Status Version::Get(const ReadOptions& options,
       Slice* value_slice;
       Status s = cloud_manager->InvokeLambdaRandomGet(user_key, cloud_level_.files_[index], &value_slice); 
       std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
-      bench_file << "cloud_get: " << (end_time - start_time).count() << std::endl;
+      bench_file << "cloud_get: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << std::endl;
       return s;
     }
   } else {
     std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
-    bench_file << "local_get: " << (end_time - start_time).count() << std::endl;
+    bench_file << "local_get: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << std::endl;
   }
   return Status::NotFound(Slice());  // Use an empty error message for speed
 }
@@ -933,9 +933,6 @@ class VersionSet::Builder {
   }
 
   void MaybeAddFile(Version* v, int level, FileMetaData* f) {
-#ifdef DEBUG_LOG
-    std::cerr << "Builder::MaybeAddFile()" << std::endl;
-#endif
     if (levels_[level].deleted_files.count(f->number) > 0) {
       // File is deleted: do nothing
     } else {
@@ -948,9 +945,6 @@ class VersionSet::Builder {
       f->refs++;
       files->push_back(f);
     }
-#ifdef DEBUG_LOG
-    std::cerr << "Builder::MaybeAddFile() Done" << std::endl;
-#endif
   }
 };
 
