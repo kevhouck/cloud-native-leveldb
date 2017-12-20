@@ -32,7 +32,7 @@ def lambda_handler(event, context):
 
     start = time.time()
     res_json = sp.check_output(['./standalone_merger', os.environ['LEVELDB_REGION'], os.environ['LEVELDB_BUCKET'], tmpdir])
-    end = time.end()
+    end = time.time()
     result['merge_time'] = end - start
     logger.info('got result: {}'.format(res_json))
     result['data'] = res_json
