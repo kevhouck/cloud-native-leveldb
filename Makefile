@@ -11,7 +11,7 @@
 # (B) Debug mode, w/ full line-level debugging symbols
 # OPT ?= -g2
 # (C) Profiling mode: opt, but w/debugging symbols
-OPT ?= -g2
+OPT ?= -g2 -DDEBUG_LOG
 #-----------------------------------------------
 
 # detect what platform we're building on
@@ -141,7 +141,9 @@ $(SHARED_OUTDIR)/$(SHARED_LIB3): $(SHARED_LIBOBJECTS)
 
 endif  # PLATFORM_SHARED_EXT
 
-all: $(SHARED_LIBS) $(SHARED_PROGRAMS) $(STATIC_OUTDIR)/libleveldb.a $(STATIC_OUTDIR)/libmemenv.a $(STATIC_PROGRAMS)
+all: $(SHARED_LIBS) $(SHARED_PROGRAMS) $(STATIC_OUTDIR)/libleveldb.a $(STATIC_OUTDIR)/libmemenv.a $(STATIC_PROGRAMS) pack
+
+pack: lambdas/leveldb_compact/leveldb_compact.zip lambdas/leveldb_get/leveldb_get.zip
 
 check: $(STATIC_PROGRAMS)
 	for t in $(notdir $(TESTS)); do echo "***** Running $$t"; $(STATIC_OUTDIR)/$$t || exit 1; done
@@ -310,8 +312,16 @@ $(STATIC_OUTDIR)/db_bench_tree_db:doc/bench/db_bench_tree_db.cc $(STATIC_LIBOBJE
 $(STATIC_OUTDIR)/standalone_merger:db/standalone_merger.cc $(STATIC_LIBOBJECTS)
 	$(CXX) $(LDFLAGS) $(CXXFLAGS) db/standalone_merger.cc $(STATIC_LIBOBJECTS) -o $@ $(LIBS)
 
+lambdas/leveldb_compact/leveldb_compact.zip:$(STATIC_OUTDIR)/standalone_merger lambdas/leveldb_compact/lambda_function.py
+	cp $(STATIC_OUTDIR)/standalone_merger lambdas/leveldb_compact
+	cd lambdas/leveldb_compact && rm -f *.zip *.pyc && zip -r leveldb_compact.zip *
+
 $(STATIC_OUTDIR)/table_reader:db/table_reader.cc $(STATIC_LIBOBJECTS)
 	$(CXX) $(LDFLAGS) $(CXXFLAGS) db/table_reader.cc $(STATIC_LIBOBJECTS) -o $@ $(LIBS)
+
+lambdas/leveldb_get/leveldb_get.zip:$(STATIC_OUTDIR)/table_reader lambdas/leveldb_get/lambda_function.py
+	cp $(STATIC_OUTDIR)/table_reader lambdas/leveldb_get
+	cd lambdas/leveldb_get && rm -f *.zip *.pyc && zip -r leveldb_get.zip *
 
 $(STATIC_OUTDIR)/leveldbutil:db/leveldbutil.cc $(STATIC_LIBOBJECTS)
 	$(CXX) $(LDFLAGS) $(CXXFLAGS) db/leveldbutil.cc $(STATIC_LIBOBJECTS) -o $@ $(LIBS)
