@@ -460,6 +460,9 @@ Status Version::Get(const ReadOptions& options,
   if (cloud_manager != NULL) {
     // Look in cloud files
     uint32_t index = FindCloudFile(vset_->icmp_, cloud_level_.files_, ikey);
+    for (size_t i = 0; i < cloud_level_.files_.size(); i++) {
+      std::cerr << i << " " << cloud_level_.files_[i]->smallest.user_key().ToString() << std::endl;
+    }
     if (index < cloud_level_.files_.size()) {
       Slice* value_slice;
       return cloud_manager->InvokeLambdaRandomGet(user_key, cloud_level_.files_[index], &value_slice); 
@@ -904,8 +907,9 @@ class VersionSet::Builder {
     }
     
     BySmallestKeyCloud ccmp;
-    // TODO still need to determine where it is being reversed when sending to lambda
-    sort(v->cloud_level_.files_.begin(), v->cloud_level_.files_.begin(), ccmp);
+    ccmp.internal_comparator = &vset_->icmp_;
+    // TODO Cloud Comparator order is reverse that on non, may need to change if Set is used
+    sort(v->cloud_level_.files_.begin(), v->cloud_level_.files_.end(), ccmp);
 #ifdef DEBUG_LOG
     std::cerr << "Builder::SaveTo() Done" << std::endl;
 #endif
