@@ -146,16 +146,15 @@ Status CloudManager::InvokeLambdaRandomGet(Slice user_key, CloudFile* cf, Slice*
     std::cerr << "InvokeLambdaRandomGet()" << std::endl;
 #endif
   std::string user_key_str = user_key.ToString();
-  json j;
-  j["user_key"] = base64_encode((const unsigned char*)user_key_str.c_str(), user_key_str.size());
-  j["number"] = cf->obj_num;
-  Aws::String js = Aws::String(j.dump().c_str());
+  std::string encoded_user_key = base64_encode((const unsigned char*)user_key_str.c_str(), user_key_str.size());
   Aws::Lambda::Model::InvokeRequest invoke_req;
   invoke_req.SetFunctionName("leveldb_get");
   invoke_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
   Aws::Utils::Json::JsonValue json_payload;
-  json_payload.WithString("data", js);
+  json_payload.WithString("user_key", Aws::String(encoded_user_key.c_str(), encoded_user_key.size()));
+  json_payload.WithInt64("number", cf->obj_num);
   std::shared_ptr<Aws::IOStream> payload = Aws::MakeShared<Aws::StringStream>("");
+  std::cerr << "get payload " << json_payload.WriteReadable() << std::endl;
   *payload << json_payload.WriteReadable();
   invoke_req.SetBody(payload);
   invoke_req.SetContentType("application/json");
@@ -170,15 +169,16 @@ Status CloudManager::InvokeLambdaRandomGet(Slice user_key, CloudFile* cf, Slice*
   auto &result = invoke_res.GetResult();
   auto &result_payload = result.GetPayload();
   Aws::Utils::Json::JsonValue json_result(result_payload);
-  Aws::String json_as_aws_string = json_result.GetString("data");
-  std::string json_as_string = std::string(json_as_aws_string.c_str(), json_as_aws_string.size());
-  json res_json = json::parse(json_as_string);
-  uint32_t status_num = res_json.at("status").get<uint32_t>();
+
+  uint32_t status_num = json_result.GetInteger("status");
+  std::cerr << "status_num " << status_num << std::endl;
   if (status_num != 0) {
     // The key was not actually in the cloud file
     return Status::NotFound(Slice());
   }
-  std::string value_str = res_json.at("value").get<std::string>().c_str();
+  Aws::String value_as_aws_string = json_result.GetString("value");
+  std::string value_str = std::string(value_as_aws_string.c_str(), value_as_aws_string.size());
+  std::cerr << "value " << value_str << std::endl;
   *value = new Slice(base64_decode(value_str));
   return Status::OK();
 }
