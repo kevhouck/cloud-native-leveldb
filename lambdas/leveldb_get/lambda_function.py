@@ -5,6 +5,7 @@ import subprocess as sp
 import boto3
 import json
 import time
+import shutil
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -33,5 +34,8 @@ def lambda_handler(event, context):
 
     for k,v in j.items():
         result[k] = v
+
+    # clean tmpdir
+    shutil.rmtree(tmpdir)
 
     return result

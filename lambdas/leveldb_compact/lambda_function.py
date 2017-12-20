@@ -5,6 +5,7 @@ import subprocess as sp
 import boto3
 import json
 import time
+import shutil
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -45,5 +46,8 @@ def lambda_handler(event, context):
                 '%06d.ldb' % fnum)
     end = time.time()
     result['upload_time'] = end - start
+
+    # clean tmpdir
+    shutil.rmtree(tmpdir)
 
     return result
