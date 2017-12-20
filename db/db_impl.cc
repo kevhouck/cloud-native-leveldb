@@ -151,6 +151,9 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
   versions_ = new VersionSet(dbname_, &options_, table_cache_,
                              &internal_comparator_);
 
+  std::cerr << "write_buffer_size=" << options_.write_buffer_size << std::endl;
+  std::cerr << "max_file_size=" << options_.max_file_size << std::endl;
+
   if (options_.use_cloud) {
     cloud_manager_ = new CloudManager(options_.region, options_.bucket);
   }
@@ -714,6 +717,8 @@ void DBImpl::BackgroundCompaction() {
 #ifdef DEBUG_LOG
   std::cerr << "BackgroundCompaction()" << std::endl;
 #endif
+  VersionSet::LevelSummaryStorage tmp;
+  std::cerr << versions_->LevelSummary(&tmp) << std::endl;
   mutex_.AssertHeld();
 
   if (imm_ != NULL) {
@@ -747,7 +752,7 @@ void DBImpl::BackgroundCompaction() {
       s = FinishCloudCompaction(cc);
       std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
       std::chrono::high_resolution_clock::time_point start_time = cc->start_time;
-      bench_file << "cloud_compaction: " << (end_time - start_time).count() << " cloud_inputs: " << cc->cloud_inputs_.size() << " outputs: " << cc->new_cloud_files_.size() << std::endl;
+      bench_file << "cloud_compaction: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << " cloud_inputs: " << cc->cloud_inputs_.size() << " outputs: " << cc->new_cloud_files_.size() << std::endl;
       if (!s.ok()) {
         Log(options_.info_log,
             "Cloud New Version error: %s", s.ToString().c_str());
@@ -794,7 +799,7 @@ void DBImpl::BackgroundCompaction() {
 
     std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point start_time = c->start_time;
-    bench_file << "compaction: " << (end_time - start_time).count() << " inputs_0: " << c->num_input_files(0) << " inputs_1: " << c->num_input_files(1) << " outputs: " << c->edit()->new_files_.size() << std::endl;
+    bench_file << "compaction: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << " inputs_0: " << c->num_input_files(0) << " inputs_1: " << c->num_input_files(1) << " outputs: " << c->edit()->new_files_.size() << std::endl;
   }
   delete c;
 
@@ -1712,8 +1717,6 @@ Status DB::Open(const Options& options, const std::string& dbname,
   *dbptr = NULL;
 
   DBImpl* impl = new DBImpl(options, dbname);
-  std::cerr << "write_buffer_size=" << impl->options_.write_buffer_size << std::endl;  
-  std::cerr << "max_file_size=" << impl->options_.max_file_size << std::endl;  
   impl->mutex_.Lock();
   VersionEdit edit;
   // Recover handles create_if_missing, error_if_exists

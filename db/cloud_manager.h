@@ -1,8 +1,15 @@
-#include <aws/core/Aws.h>
-#include <aws/s3/S3Client.h>
-#include <aws/lambda/LambdaClient.h>
 #include "leveldb/status.h"
 #include "db/version_edit.h"
+
+namespace Aws {
+namespace S3 {
+class S3Client;
+}
+namespace Lambda {
+class LambdaClient;
+}
+struct SDKOptions;
+}
 
 namespace leveldb {
 
@@ -11,7 +18,7 @@ class CloudCompaction;
 
 class CloudManager {
   public:
-    CloudManager(Aws::String region, Aws::String bucket);
+    CloudManager(std::string region, std::string bucket);
     ~CloudManager();
     Status SendFile(uint64_t file_number, std::string base);
     Status FetchFile(uint64_t file_number, std::string base);
@@ -22,9 +29,9 @@ class CloudManager {
   private:
     VersionSet* versions_;
     Aws::S3::S3Client* s3_client_;
-    Aws::String s3_bucket_;
+    std::string s3_bucket_;
     Aws::Lambda::LambdaClient* lambda_client_;
-    Aws::SDKOptions aws_options;
+    Aws::SDKOptions* aws_options;
 };
 
 }

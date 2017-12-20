@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <aws/core/Aws.h>
 #include <aws/s3/S3Client.h>
 #include <aws/lambda/LambdaClient.h>
 #include <aws/s3/model/PutObjectRequest.h>
@@ -16,22 +17,24 @@ namespace leveldb {
 
 extern std::ofstream bench_file;
 
-CloudManager::CloudManager(Aws::String region, Aws::String bucket) {
-  Aws::InitAPI(aws_options);
+CloudManager::CloudManager(std::string region, std::string bucket) {
+  aws_options = new Aws::SDKOptions;
+  Aws::InitAPI(*aws_options);
   
   Aws::Client::ClientConfiguration client_config;
   client_config.requestTimeoutMs = 600000;
-  client_config.region = region;
+  client_config.region = Aws::String(region.c_str());
   s3_client_ = new Aws::S3::S3Client(client_config);
   s3_bucket_ = bucket;
 
   Aws::Client::ClientConfiguration client_config_2;
-  client_config_2.region = region;
+  client_config_2.region = Aws::String(region.c_str());
   lambda_client_ = new Aws::Lambda::LambdaClient(client_config_2);
 }
 
 CloudManager::~CloudManager() {
-  Aws::ShutdownAPI(aws_options);
+  Aws::ShutdownAPI(*aws_options);
+  delete aws_options;
 }
 
 Status CloudManager::SendFile(uint64_t file_number, std::string base) {
@@ -55,7 +58,7 @@ Status CloudManager::SendFile(uint64_t file_number, std::string base) {
   }
 
   Aws::S3::Model::PutObjectRequest obj_req;
-  obj_req.WithBucket(s3_bucket_).WithKey(Aws::String(obj_name.c_str()));
+  obj_req.WithBucket(Aws::String(s3_bucket_.c_str())).WithKey(Aws::String(obj_name.c_str()));
   auto input_data = Aws::MakeShared<Aws::FStream>("PutObjectInputStream",
     file_name.c_str(), std::ios_base::in | std::ios_base::binary);
   obj_req.SetBody(input_data);
@@ -64,7 +67,7 @@ Status CloudManager::SendFile(uint64_t file_number, std::string base) {
   if (put_object_outcome.IsSuccess()) {
     std::cerr << "Put successful" << std::endl;
     std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
-    bench_file << "send_file: " << (end_time - start_time).count() << std::endl;
+    bench_file << "send_file: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << std::endl;
     return Status::OK();
   } else {
     std::cerr << "Put failed" << std::endl;
@@ -88,7 +91,7 @@ Status CloudManager::FetchFile(uint64_t file_number, std::string base) {
   }
 
   Aws::S3::Model::GetObjectRequest obj_req;
-  obj_req.WithBucket(s3_bucket_).WithKey(Aws::String(file_name.c_str()));
+  obj_req.WithBucket(Aws::String(s3_bucket_.c_str())).WithKey(Aws::String(file_name.c_str()));
   auto get_outcome = s3_client_->GetObject(obj_req);
 
   if (!get_outcome.IsSuccess()) {
@@ -150,7 +153,7 @@ Status CloudManager::InvokeLambdaCompaction(CloudCompaction* cc, VersionSet* ver
   uint32_t merge_time_us = json_result.GetDouble("merge_time") * 1000000;
   uint32_t upload_time_us = json_result.GetDouble("upload_time") * 1000000;
   std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
-  bench_file << "lambda_compaction: " << (end_time - start_time).count() << " download: " << download_time_us << " merge: " << merge_time_us << " upload: " << upload_time_us << std::endl;
+  bench_file << "lambda_compaction: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << " download: " << download_time_us << " merge: " << merge_time_us << " upload: " << upload_time_us << std::endl;
   return Status::OK();
 }
 
@@ -192,7 +195,7 @@ Status CloudManager::InvokeLambdaRandomGet(Slice user_key, CloudFile* cf, Slice*
   uint32_t command_time_us = json_result.GetDouble("command_time") * 1000000;
 
   std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
-  bench_file << "lambda_get: " << (end_time - start_time).count() << " download: " << download_time_us << " command: " << command_time_us << std::endl;
+  bench_file << "lambda_get: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << " download: " << download_time_us << " command: " << command_time_us << std::endl;
   if (status_num != 0) {
     // The key was not actually in the cloud file
     return Status::NotFound(Slice());
@@ -213,7 +216,7 @@ Status CloudManager::FetchBloomFilter(uint64_t cloud_file_num, Slice* s) {
   std::string bloom_file_obj_name = "bloom" + std::string(buf, 12); 
 
   Aws::S3::Model::GetObjectRequest obj_req;
-  obj_req.WithBucket(s3_bucket_).WithKey(Aws::String(bloom_file_obj_name.c_str()));
+  obj_req.WithBucket(Aws::String(s3_bucket_.c_str())).WithKey(Aws::String(bloom_file_obj_name.c_str()));
   
   auto get_outcome = s3_client_->GetObject(obj_req);
   

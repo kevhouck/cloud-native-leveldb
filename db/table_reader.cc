@@ -1,3 +1,4 @@
+#include <iostream>
 #include <stdlib.h>
 #include "db/dbformat.h"
 #include "leveldb/options.h"

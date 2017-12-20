@@ -6,8 +6,7 @@
 #define STORAGE_LEVELDB_INCLUDE_OPTIONS_H_
 
 #include <stddef.h>
-
-#include <aws/core/Aws.h>
+#include <string>
 
 namespace leveldb {
 
@@ -160,9 +159,9 @@ struct Options {
 
   bool use_cloud;
 
-  Aws::String region;
+  std::string region;
 
-  Aws::String bucket;  
+  std::string bucket;  
 };
 
 // Options that control read operations
