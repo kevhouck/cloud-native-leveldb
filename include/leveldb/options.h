@@ -7,6 +7,7 @@
 
 #include <stddef.h>
 #include "leveldb/export.h"
+#include <string>
 
 namespace leveldb {
 
@@ -156,6 +157,12 @@ struct LEVELDB_EXPORT Options {
 
   // Create an Options object with default values for all fields.
   Options();
+
+  bool use_cloud;
+
+  std::string region;
+
+  std::string bucket;  
 };
 
 // Options that control read operations

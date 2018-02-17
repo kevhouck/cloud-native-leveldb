@@ -15,11 +15,13 @@
 #ifndef STORAGE_LEVELDB_DB_VERSION_SET_H_
 #define STORAGE_LEVELDB_DB_VERSION_SET_H_
 
+#include <chrono>
 #include <map>
 #include <set>
 #include <vector>
 #include "db/dbformat.h"
 #include "db/version_edit.h"
+#include "db/cloud_manager.h"
 #include "port/port.h"
 #include "port/thread_annotations.h"
 
@@ -28,6 +30,7 @@ namespace leveldb {
 namespace log { class Writer; }
 
 class Compaction;
+class CloudCompaction;
 class Iterator;
 class MemTable;
 class TableBuilder;
@@ -43,6 +46,10 @@ extern int FindFile(const InternalKeyComparator& icmp,
                     const std::vector<FileMetaData*>& files,
                     const Slice& key);
 
+extern int FindCloudFile(const InternalKeyComparator& icmp,
+                    const std::vector<CloudFile*>& cloud_files,
+                    const Slice& key);
+
 // Returns true iff some file in "files" overlaps the user key range
 // [*smallest,*largest].
 // smallest==NULL represents a key smaller than all keys in the DB.
@@ -55,6 +62,11 @@ extern bool SomeFileOverlapsRange(
     const std::vector<FileMetaData*>& files,
     const Slice* smallest_user_key,
     const Slice* largest_user_key);
+
+class CloudLevel {
+  public:
+    std::vector<CloudFile*> files_;
+};
 
 class Version {
  public:
@@ -71,7 +83,7 @@ class Version {
     int seek_file_level;
   };
   Status Get(const ReadOptions&, const LookupKey& key, std::string* val,
-             GetStats* stats);
+             GetStats* stats, CloudManager* cloud_manager);
 
   // Adds "stats" into the current state.  Returns true if a new
   // compaction may need to be triggered, false otherwise.
@@ -95,6 +107,12 @@ class Version {
       const InternalKey* end,           // NULL means after all keys
       std::vector<FileMetaData*>* inputs);
 
+
+  void GetOverlappingCloudInputs(
+      const InternalKey* begin,
+      const InternalKey* end,
+      std::vector<CloudFile>* inputs);
+
   // Returns true iff some file in the specified level overlaps
   // some part of [*smallest_user_key,*largest_user_key].
   // smallest_user_key==NULL represents a key smaller than all keys in the DB.
@@ -112,6 +130,9 @@ class Version {
 
   // Return a human readable string that describes this version's contents.
   std::string DebugString() const;
+
+  // Cloud level
+  CloudLevel cloud_level_;
 
  private:
   friend class Compaction;
@@ -140,12 +161,13 @@ class Version {
   // Next file to compact based on seek stats.
   FileMetaData* file_to_compact_;
   int file_to_compact_level_;
-
+  
   // Level that should be compacted next and its compaction score.
   // Score < 1 means compaction is not strictly needed.  These fields
   // are initialized by Finalize().
   double compaction_score_;
   int compaction_level_;
+  double cloud_score_;
 
   explicit Version(VersionSet* vset)
       : vset_(vset), next_(this), prev_(this), refs_(0),
@@ -153,6 +175,9 @@ class Version {
         file_to_compact_level_(-1),
         compaction_score_(-1),
         compaction_level_(-1) {
+#ifdef DEBUG_LOG
+    std::cerr << "Version()" << std::endl;
+#endif
   }
 
   ~Version();
@@ -190,6 +215,8 @@ class VersionSet {
   // Allocate and return a new file number
   uint64_t NewFileNumber() { return next_file_number_++; }
 
+  uint64_t NextCloudFileNumber() { return next_cloud_file_number_; }
+
   // Arrange to reuse "file_number" unless a newer file number has
   // already been allocated.
   // REQUIRES: "file_number" was returned by a call to NewFileNumber().
@@ -217,12 +244,19 @@ class VersionSet {
   // Mark the specified file number as used.
   void MarkFileNumberUsed(uint64_t number);
 
+  void MarkCloudFileNumberUsed(uint64_t number);
+
   // Return the current log file number.
   uint64_t LogNumber() const { return log_number_; }
 
   // Return the log file number for the log file that is currently
   // being compacted, or zero if there is no such log file.
   uint64_t PrevLogNumber() const { return prev_log_number_; }
+
+
+  bool ShouldCloudCompact();
+
+  CloudCompaction* PickCloudCompaction();
 
   // Pick level and inputs for a new compaction.
   // Returns NULL if there is no compaction to be done.
@@ -247,10 +281,15 @@ class VersionSet {
   // The caller should delete the iterator when no longer needed.
   Iterator* MakeInputIterator(Compaction* c);
 
+  Iterator* MakeCloudInputIterator(std::vector<FileMetaData*> inputs[2]);
+
   // Returns true iff some level needs a compaction.
   bool NeedsCompaction() const {
+#ifdef DEBUG_LOG
+    std::cerr << "compaction score " << current_->compaction_score_ << std::endl;
+#endif
     Version* v = current_;
-    return (v->compaction_score_ >= 1) || (v->file_to_compact_ != NULL);
+    return (v->compaction_score_ >= 1) || (v->cloud_score_ >= 1) || (v->file_to_compact_ != NULL);
   }
 
   // Add all files listed in any live version to *live.
@@ -267,6 +306,7 @@ class VersionSet {
     char buffer[100];
   };
   const char* LevelSummary(LevelSummaryStorage* scratch) const;
+  const void LevelDetail() const;
 
  private:
   class Builder;
@@ -314,10 +354,30 @@ class VersionSet {
   // Per-level key at which the next compaction at that level should start.
   // Either an empty string, or a valid InternalKey.
   std::string compact_pointer_[config::kNumLevels];
+  std::string cloud_compact_pointer_;
+  uint64_t next_cloud_file_number_;
 
   // No copying allowed
   VersionSet(const VersionSet&);
   void operator=(const VersionSet&);
+};
+
+class CloudCompaction {
+  public:
+    Version* input_version_;
+    VersionEdit edit_;
+    std::vector<FileMetaData> local_inputs_;
+    std::vector<CloudFile> cloud_inputs_;
+    std::vector<CloudFile> new_cloud_files_;
+    std::chrono::high_resolution_clock::time_point start_time;
+    
+    CloudCompaction() { }
+
+    ~CloudCompaction() {
+      if (input_version_ != NULL) {
+        input_version_->Unref();
+      }
+    }
 };
 
 // A Compaction encapsulates information about a compaction.
@@ -362,6 +422,7 @@ class Compaction {
   // is successful.
   void ReleaseInputs();
 
+  std::chrono::high_resolution_clock::time_point start_time;
  private:
   friend class Version;
   friend class VersionSet;

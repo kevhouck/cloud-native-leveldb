@@ -56,6 +56,11 @@ class LEVELDB_EXPORT Table {
   // be close to the file length.
   uint64_t ApproximateOffsetOf(const Slice& key) const;
 
+  Status InternalGet(
+      const ReadOptions&, const Slice& key,
+      void* arg,
+      void (*handle_result)(void* arg, const Slice& k, const Slice& v));
+
  private:
   struct Rep;
   Rep* rep_;
@@ -67,11 +72,6 @@ class LEVELDB_EXPORT Table {
   // to Seek(key).  May not make such a call if filter policy says
   // that key is not present.
   friend class TableCache;
-  Status InternalGet(
-      const ReadOptions&, const Slice& key,
-      void* arg,
-      void (*handle_result)(void* arg, const Slice& k, const Slice& v));
-
 
   void ReadMeta(const Footer& footer);
   void ReadFilter(const Slice& filter_handle_value);

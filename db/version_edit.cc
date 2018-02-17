@@ -6,6 +6,8 @@
 
 #include "db/version_set.h"
 #include "util/coding.h"
+#include "base64/base64.h"
+#include <iostream>
 
 namespace leveldb {
 
@@ -20,10 +22,17 @@ enum Tag {
   kDeletedFile          = 6,
   kNewFile              = 7,
   // 8 was used for large value refs
-  kPrevLogNumber        = 9
+  kPrevLogNumber        = 9,
+  kNewCloudFile         = 10,
+  kDeletedCloudFile     = 11,
+  kCloudCompactPointer  = 12,
+  kNextCloudFileNumber  = 13,
 };
 
 void VersionEdit::Clear() {
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::Clear()" << std::endl;
+#endif
   comparator_.clear();
   log_number_ = 0;
   prev_log_number_ = 0;
@@ -36,9 +45,57 @@ void VersionEdit::Clear() {
   has_last_sequence_ = false;
   deleted_files_.clear();
   new_files_.clear();
+  deleted_cloud_files_.clear();
+  new_cloud_files_.clear();
+  has_next_cloud_file_number_ = false;
+}
+
+void to_json(json& j, const CloudFile& cf) {
+  std::cerr << "number" << cf.obj_num << std::endl;
+  j["file_size"] =  cf.file_size;
+  std::string smallest =  cf.smallest.Encode().ToString();
+  std::cerr << "smallest " << cf.smallest.user_key().ToString() << std::endl;
+  j["smallest"] = base64_encode((const unsigned char*)smallest.c_str(), smallest.size());
+  std::string largest = cf.largest.Encode().ToString();
+  std::cerr << "largest " << cf.largest.user_key().ToString() << std::endl;
+  j["largest"]  = base64_encode((const unsigned char*)largest.c_str(), largest.size());
+  j["number"] = cf.obj_num;
+}
+
+void from_json(const json& j, CloudFile& cf) {
+  cf.file_size = j.at("file_size").get<uint64_t>();
+  std::string largest = j.at("largest").get<std::string>();
+  cf.largest.DecodeFrom(Slice(base64_decode(largest)));
+  std::string smallest = j.at("smallest").get<std::string>();
+  cf.smallest.DecodeFrom(Slice(base64_decode(smallest)));
+  cf.obj_num = j.at("number").get<uint64_t>();
+}
+
+void to_json(json& j, const FileMetaData& f) {
+  std::cerr << "number" << f.number << std::endl;
+  j["file_size"] =  f.file_size;
+  std::string smallest =  f.smallest.Encode().ToString();
+  std::cerr << "smallest " << f.smallest.user_key().ToString() << std::endl;
+  j["smallest"] = base64_encode((const unsigned char*)smallest.c_str(), smallest.size());
+  std::string largest = f.largest.Encode().ToString();
+  std::cerr << "largest " << f.largest.user_key().ToString() << std::endl;
+  j["largest"]  = base64_encode((const unsigned char*)largest.c_str(), largest.size());
+  j["number"] = f.number;
+}
+
+void from_json(const json& j, FileMetaData& f) {
+  f.file_size = j.at("file_size").get<uint64_t>();
+  std::string largest = j.at("largest").get<std::string>();
+  f.largest.DecodeFrom(Slice(base64_decode(largest)));
+  std::string smallest = j.at("smallest").get<std::string>();
+  f.smallest.DecodeFrom(Slice(base64_decode(smallest)));
+  f.number = j.at("number").get<uint64_t>();
 }
 
 void VersionEdit::EncodeTo(std::string* dst) const {
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::EncodeTo()" << std::endl;
+#endif
   if (has_comparator_) {
     PutVarint32(dst, kComparator);
     PutLengthPrefixedSlice(dst, comparator_);
@@ -59,11 +116,20 @@ void VersionEdit::EncodeTo(std::string* dst) const {
     PutVarint32(dst, kLastSequence);
     PutVarint64(dst, last_sequence_);
   }
+  if (has_next_cloud_file_number_) {
+    PutVarint32(dst, kNextCloudFileNumber);
+    PutVarint64(dst, next_cloud_file_number_);
+  } 
 
   for (size_t i = 0; i < compact_pointers_.size(); i++) {
     PutVarint32(dst, kCompactPointer);
     PutVarint32(dst, compact_pointers_[i].first);  // level
     PutLengthPrefixedSlice(dst, compact_pointers_[i].second.Encode());
+  }
+
+  for (size_t i = 0; i < cloud_compact_pointers_.size(); i++) {
+    PutVarint32(dst, kCloudCompactPointer);
+    PutLengthPrefixedSlice(dst, cloud_compact_pointers_[i].Encode());
   }
 
   for (DeletedFileSet::const_iterator iter = deleted_files_.begin();
@@ -83,9 +149,26 @@ void VersionEdit::EncodeTo(std::string* dst) const {
     PutLengthPrefixedSlice(dst, f.smallest.Encode());
     PutLengthPrefixedSlice(dst, f.largest.Encode());
   }
+  
+  for (size_t i = 0; i < new_cloud_files_.size(); i++) {
+    const CloudFile& f = new_cloud_files_[i];
+    PutVarint32(dst, kNewCloudFile);
+    PutVarint64(dst, f.obj_num);
+    PutVarint64(dst, f.file_size);
+    PutLengthPrefixedSlice(dst, f.smallest.Encode());
+    PutLengthPrefixedSlice(dst, f.largest.Encode());
+  }
+
+  for (size_t i = 0; i < deleted_cloud_files_.size(); i++) {
+    PutVarint32(dst, kDeletedCloudFile);
+    PutVarint64(dst, deleted_cloud_files_[i]); 
+  }
 }
 
 static bool GetInternalKey(Slice* input, InternalKey* dst) {
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::GetInternalKey()" << std::endl;
+#endif
   Slice str;
   if (GetLengthPrefixedSlice(input, &str)) {
     dst->DecodeFrom(str);
@@ -96,6 +179,9 @@ static bool GetInternalKey(Slice* input, InternalKey* dst) {
 }
 
 static bool GetLevel(Slice* input, int* level) {
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::GetLevel()" << std::endl;
+#endif
   uint32_t v;
   if (GetVarint32(input, &v) &&
       v < config::kNumLevels) {
@@ -107,6 +193,9 @@ static bool GetLevel(Slice* input, int* level) {
 }
 
 Status VersionEdit::DecodeFrom(const Slice& src) {
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::DecodeFrom()" << std::endl;
+#endif
   Clear();
   Slice input = src;
   const char* msg = NULL;
@@ -116,6 +205,7 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
   int level;
   uint64_t number;
   FileMetaData f;
+  CloudFile cf;
   Slice str;
   InternalKey key;
 
@@ -145,6 +235,14 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
           msg = "previous log number";
         }
         break;
+      
+      case kNextCloudFileNumber:
+        if (GetVarint64(&input, &next_cloud_file_number_)) {
+          has_next_cloud_file_number_ = true;
+        } else {
+          msg = "next cloud file number";
+        }
+        break;
 
       case kNextFileNumber:
         if (GetVarint64(&input, &next_file_number_)) {
@@ -171,6 +269,14 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
         }
         break;
 
+      case kCloudCompactPointer:
+        if (GetInternalKey(&input, &key)) {
+          cloud_compact_pointers_.push_back(key);
+        } else {
+          msg = "cloud compaction pointer";
+        }
+        break;
+
       case kDeletedFile:
         if (GetLevel(&input, &level) &&
             GetVarint64(&input, &number)) {
@@ -191,6 +297,23 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
           msg = "new-file entry";
         }
         break;
+    
+      case kNewCloudFile:
+        if (GetVarint64(&input, &cf.obj_num) &&
+            GetVarint64(&input, &cf.file_size) &&
+            GetInternalKey(&input, &cf.smallest) &&
+            GetInternalKey(&input, &cf.largest)) {
+          new_cloud_files_.push_back(cf);
+        } else {
+          msg = "new-cloud-file entry"; // TODO is this just an error message
+        }
+
+      case kDeletedCloudFile:
+        if (GetVarint64(&input, &number)) {
+          deleted_cloud_files_.push_back(number);
+        } else {
+          msg = "deleted cloud file";
+        }
 
       default:
         msg = "unknown tag";
@@ -210,6 +333,9 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
 }
 
 std::string VersionEdit::DebugString() const {
+#ifdef DEBUG_LOG
+    std::cerr << "VersionEdit::DebugString()" << std::endl;
+#endif
   std::string r;
   r.append("VersionEdit {");
   if (has_comparator_) {

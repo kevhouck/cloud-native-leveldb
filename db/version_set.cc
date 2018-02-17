@@ -17,11 +17,16 @@
 #include "table/two_level_iterator.h"
 #include "util/coding.h"
 #include "util/logging.h"
+#include <iostream>
+#include <fstream>
+#include <string>
 
 namespace leveldb {
 
+extern std::ofstream bench_file;
+
 static int TargetFileSize(const Options* options) {
-  return options->max_file_size;
+ return options->max_file_size;
 }
 
 // Maximum bytes of overlaps in grandparent (i.e., level+2) before we
@@ -81,6 +86,15 @@ Version::~Version() {
       }
     }
   }
+
+  for (size_t i = 0; i < cloud_level_.files_.size(); i++) {
+    CloudFile* cf = cloud_level_.files_[i];
+    assert(cf->refs > 0);
+    cf->refs--;
+    if (cf->refs <= 0) {
+      delete cf;
+    }
+  }
 }
 
 int FindFile(const InternalKeyComparator& icmp,
@@ -91,6 +105,27 @@ int FindFile(const InternalKeyComparator& icmp,
   while (left < right) {
     uint32_t mid = (left + right) / 2;
     const FileMetaData* f = files[mid];
+    if (icmp.InternalKeyComparator::Compare(f->largest.Encode(), key) < 0) {
+      // Key at "mid.largest" is < "target".  Therefore all
+      // files at or before "mid" are uninteresting.
+      left = mid + 1;
+    } else {
+      // Key at "mid.largest" is >= "target".  Therefore all files
+      // after "mid" are uninteresting.
+      right = mid;
+    }
+  }
+  return right;
+}
+
+int FindCloudFile(const InternalKeyComparator& icmp,
+             const std::vector<CloudFile*>& cloud_files,
+             const Slice& key) {
+  uint32_t left = 0;
+  uint32_t right = cloud_files.size();
+  while (left < right) {
+    uint32_t mid = (left + right) / 2;
+    const CloudFile* f = cloud_files[mid];
     if (icmp.InternalKeyComparator::Compare(f->largest.Encode(), key) < 0) {
       // Key at "mid.largest" is < "target".  Therefore all
       // files at or before "mid" are uninteresting.
@@ -332,7 +367,10 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key,
 Status Version::Get(const ReadOptions& options,
                     const LookupKey& k,
                     std::string* value,
-                    GetStats* stats) {
+                    GetStats* stats,
+                    CloudManager* cloud_manager) {
+  std::chrono::high_resolution_clock::time_point start_time = std::chrono::high_resolution_clock::now();
+
   Slice ikey = k.internal_key();
   Slice user_key = k.user_key();
   const Comparator* ucmp = vset_->icmp_.user_comparator();
@@ -410,21 +448,41 @@ Status Version::Get(const ReadOptions& options,
       if (!s.ok()) {
         return s;
       }
+      std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
       switch (saver.state) {
         case kNotFound:
           break;      // Keep searching in other files
         case kFound:
+          bench_file << "local_get: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << std::endl;
           return s;
         case kDeleted:
           s = Status::NotFound(Slice());  // Use empty error message for speed
+          bench_file << "local_get: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << std::endl;
           return s;
         case kCorrupt:
           s = Status::Corruption("corrupted key for ", user_key);
+          bench_file << "local_get: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << std::endl;
           return s;
       }
     }
   }
-
+  if (cloud_manager != NULL) {
+    // Look in cloud files
+    uint32_t index = FindCloudFile(vset_->icmp_, cloud_level_.files_, ikey);
+    for (size_t i = 0; i < cloud_level_.files_.size(); i++) {
+      std::cerr << i << " " << cloud_level_.files_[i]->smallest.user_key().ToString() << std::endl;
+    }
+    if (index < cloud_level_.files_.size()) {
+      Slice* value_slice;
+      Status s = cloud_manager->InvokeLambdaRandomGet(user_key, cloud_level_.files_[index], &value_slice); 
+      std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
+      bench_file << "cloud_get: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << std::endl;
+      return s;
+    }
+  } else {
+    std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
+    bench_file << "local_get: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << std::endl;
+  }
   return Status::NotFound(Slice());  // Use an empty error message for speed
 }
 
@@ -527,6 +585,34 @@ int Version::PickLevelForMemTableOutput(
   return level;
 }
 
+void Version::GetOverlappingCloudInputs(
+    const InternalKey* begin,
+    const InternalKey* end,
+    std::vector<CloudFile>* inputs) {
+  
+  inputs->clear();
+  Slice user_begin, user_end;
+  if (begin != NULL) {
+    user_begin = begin->user_key();
+  }
+  if (end != NULL) {
+    user_end = end->user_key();
+  }
+  const Comparator* user_cmp = vset_->icmp_.user_comparator();
+  for (size_t i = 0; i < cloud_level_.files_.size(); ) {
+    CloudFile* f = cloud_level_.files_[i++];
+    const Slice file_start = f->smallest.user_key();
+    const Slice file_limit = f->largest.user_key();
+    if (begin != NULL && user_cmp->Compare(file_limit, user_begin) < 0) {
+      // "f" is completely before specified range; skip it
+    } else if (end != NULL && user_cmp->Compare(file_start, user_end) > 0) {
+      // "f" is completely after specified range; skip it
+    } else {
+      inputs->push_back(*f);
+    }
+  }
+}
+
 // Store in "*inputs" all files in "level" that overlap [begin,end]
 void Version::GetOverlappingInputs(
     int level,
@@ -617,21 +703,43 @@ class VersionSet::Builder {
     }
   };
 
+  struct BySmallestKeyCloud {
+    const InternalKeyComparator* internal_comparator;
+
+    bool operator()(CloudFile* f1, CloudFile* f2) const {
+      int r = internal_comparator->Compare(f1->smallest, f2->smallest);
+      if (r != 0) {
+        return (r < 0);
+      } else {
+        // Break ties by file number
+        return (f1->obj_num < f2->obj_num);
+      }
+    }
+  };
+
   typedef std::set<FileMetaData*, BySmallestKey> FileSet;
   struct LevelState {
     std::set<uint64_t> deleted_files;
     FileSet* added_files;
   };
 
+  struct CloudLevelState {
+    std::vector<CloudFile*> added_cloud_files;
+    std::vector<uint64_t> deleted_cloud_files;
+  };
+
   VersionSet* vset_;
   Version* base_;
   LevelState levels_[config::kNumLevels];
-
+  CloudLevelState cloud_level_;
  public:
   // Initialize a builder with the files from *base and other info from *vset
   Builder(VersionSet* vset, Version* base)
       : vset_(vset),
         base_(base) {
+#ifdef DEBUG_LOG
+    std::cerr << "Builder()" << std::endl;
+#endif
     base_->Ref();
     BySmallestKey cmp;
     cmp.internal_comparator = &vset_->icmp_;
@@ -641,6 +749,9 @@ class VersionSet::Builder {
   }
 
   ~Builder() {
+#ifdef DEBUG_LOG
+    std::cerr << "~Builder()" << std::endl;
+#endif
     for (int level = 0; level < config::kNumLevels; level++) {
       const FileSet* added = levels_[level].added_files;
       std::vector<FileMetaData*> to_unref;
@@ -658,11 +769,21 @@ class VersionSet::Builder {
         }
       }
     }
+    for (size_t i = 0; i < cloud_level_.added_cloud_files.size(); i++) {
+      CloudFile* cf = cloud_level_.added_cloud_files[i];
+      cf->refs--;
+      if (cf->refs <= 0) {
+        delete cf;
+      }
+    }
     base_->Unref();
   }
 
   // Apply all of the edits in *edit to the current state.
   void Apply(VersionEdit* edit) {
+#ifdef DEBUG_LOG
+    std::cerr << "VersionSet::Builder::Apply()" << std::endl;
+#endif
     // Update compaction pointers
     for (size_t i = 0; i < edit->compact_pointers_.size(); i++) {
       const int level = edit->compact_pointers_[i].first;
@@ -678,6 +799,10 @@ class VersionSet::Builder {
       const int level = iter->first;
       const uint64_t number = iter->second;
       levels_[level].deleted_files.insert(number);
+    }
+
+    for (size_t i = 0; i < edit->deleted_cloud_files_.size(); i++) {
+      cloud_level_.deleted_cloud_files.push_back(edit->deleted_cloud_files_[i]);
     }
 
     // Add new files
@@ -705,10 +830,22 @@ class VersionSet::Builder {
       levels_[level].deleted_files.erase(f->number);
       levels_[level].added_files->insert(f);
     }
+
+    for (size_t i = 0; i < edit->new_cloud_files_.size(); i++) {
+      CloudFile* f = new CloudFile(edit->new_cloud_files_[i]);
+      f->refs = 1;
+      cloud_level_.added_cloud_files.push_back(f);
+    }
+#ifdef DEBUG_LOG
+    std::cerr << "cloud_level_.added_cloud_files.size() " << cloud_level_.added_cloud_files.size() << std::endl;
+#endif
   }
 
   // Save the current state in *v.
   void SaveTo(Version* v) {
+#ifdef DEBUG_LOG
+    std::cerr << "Builder::SaveTo()" << std::endl;
+#endif
     BySmallestKey cmp;
     cmp.internal_comparator = &vset_->icmp_;
     for (int level = 0; level < config::kNumLevels; level++) {
@@ -738,6 +875,7 @@ class VersionSet::Builder {
         MaybeAddFile(v, level, *base_iter);
       }
 
+
 #ifndef NDEBUG
       // Make sure there is no overlap in levels > 0
       if (level > 0) {
@@ -754,6 +892,44 @@ class VersionSet::Builder {
       }
 #endif
     }
+
+    // Add Cloud files
+    for (std::vector<CloudFile*>::const_iterator cpos =  cloud_level_.added_cloud_files.begin();
+        cpos !=  cloud_level_.added_cloud_files.end();
+        ++cpos) {
+      (*cpos)->refs++;
+      v->cloud_level_.files_.push_back(*cpos);
+    }
+
+    // Transfer Cloud files from last version
+    for (std::vector<CloudFile*>::const_iterator cpos = base_->cloud_level_.files_.begin();
+        cpos != base_->cloud_level_.files_.end();
+        ++cpos) {
+      bool was_deleted = false;
+      for (std::vector<uint64_t>::const_iterator dpos = cloud_level_.deleted_cloud_files.begin();
+          dpos != cloud_level_.deleted_cloud_files.end();
+          ++dpos) {
+        if ((*cpos)->obj_num == *dpos) {
+          was_deleted = true;
+        }
+      }
+      if (was_deleted) {
+        // Do not add
+        // TODO should CloudFile objects be deallocated here?
+      } else {
+        // TODO why does leveldb incr refs here?
+        (*cpos)->refs++;
+        v->cloud_level_.files_.push_back(*cpos);
+      }
+    }
+    
+    BySmallestKeyCloud ccmp;
+    ccmp.internal_comparator = &vset_->icmp_;
+    // TODO Cloud Comparator order is reverse that on non, may need to change if Set is used
+    sort(v->cloud_level_.files_.begin(), v->cloud_level_.files_.end(), ccmp);
+#ifdef DEBUG_LOG
+    std::cerr << "Builder::SaveTo() Done" << std::endl;
+#endif
   }
 
   void MaybeAddFile(Version* v, int level, FileMetaData* f) {
@@ -782,6 +958,7 @@ VersionSet::VersionSet(const std::string& dbname,
       table_cache_(table_cache),
       icmp_(*cmp),
       next_file_number_(2),
+      next_cloud_file_number_(1000000),
       manifest_file_number_(0),  // Filled by Recover()
       last_sequence_(0),
       log_number_(0),
@@ -801,6 +978,9 @@ VersionSet::~VersionSet() {
 }
 
 void VersionSet::AppendVersion(Version* v) {
+#ifdef DEBUG_LOG
+  std::cerr << "VersionSet::AppendVersion()" << std::endl;
+#endif
   // Make "v" current
   assert(v->refs_ == 0);
   assert(v != current_);
@@ -818,6 +998,9 @@ void VersionSet::AppendVersion(Version* v) {
 }
 
 Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
+#ifdef DEBUG_LOG
+  std::cerr << "VersionSet::LogAndApply()" << std::endl;
+#endif
   if (edit->has_log_number_) {
     assert(edit->log_number_ >= log_number_);
     assert(edit->log_number_ < next_file_number_);
@@ -829,6 +1012,7 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
     edit->SetPrevLogNumber(prev_log_number_);
   }
 
+  edit->SetNextCloudFile(next_cloud_file_number_);
   edit->SetNextFile(next_file_number_);
   edit->SetLastSequence(last_sequence_);
 
@@ -850,6 +1034,7 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
     assert(descriptor_file_ == NULL);
     new_manifest_file = DescriptorFileName(dbname_, manifest_file_number_);
     edit->SetNextFile(next_file_number_);
+    edit->SetNextCloudFile(next_cloud_file_number_);
     s = env_->NewWritableFile(new_manifest_file, &descriptor_file_);
     if (s.ok()) {
       descriptor_log_ = new log::Writer(descriptor_file_);
@@ -935,8 +1120,10 @@ Status VersionSet::Recover(bool *save_manifest) {
   bool have_log_number = false;
   bool have_prev_log_number = false;
   bool have_next_file = false;
+  bool have_next_cloud_file = false;
   bool have_last_sequence = false;
   uint64_t next_file = 0;
+  uint64_t next_cloud_file = 0;
   uint64_t last_sequence = 0;
   uint64_t log_number = 0;
   uint64_t prev_log_number = 0;
@@ -979,6 +1166,11 @@ Status VersionSet::Recover(bool *save_manifest) {
         have_next_file = true;
       }
 
+      if (edit.has_next_cloud_file_number_) {
+        next_cloud_file = edit.next_cloud_file_number_;
+        have_next_cloud_file = true;
+      }
+
       if (edit.has_last_sequence_) {
         last_sequence = edit.last_sequence_;
         have_last_sequence = true;
@@ -1013,6 +1205,7 @@ Status VersionSet::Recover(bool *save_manifest) {
     AppendVersion(v);
     manifest_file_number_ = next_file;
     next_file_number_ = next_file + 1;
+    next_cloud_file_number_ = next_cloud_file;
     last_sequence_ = last_sequence;
     log_number_ = log_number;
     prev_log_number_ = prev_log_number;
@@ -1059,6 +1252,12 @@ bool VersionSet::ReuseManifest(const std::string& dscname,
   return true;
 }
 
+void VersionSet::MarkCloudFileNumberUsed(uint64_t number) {
+  if (next_cloud_file_number_ <= number) {
+    next_cloud_file_number_ = number + 1;
+  }
+}
+
 void VersionSet::MarkFileNumberUsed(uint64_t number) {
   if (next_file_number_ <= number) {
     next_file_number_ = number + 1;
@@ -1066,6 +1265,9 @@ void VersionSet::MarkFileNumberUsed(uint64_t number) {
 }
 
 void VersionSet::Finalize(Version* v) {
+#ifdef DEBUG_LOG
+  std::cerr << "VersionSet::Finalize()" << std::endl;
+#endif
   // Precomputed best level for next compaction
   int best_level = -1;
   double best_score = -1;
@@ -1101,6 +1303,9 @@ void VersionSet::Finalize(Version* v) {
 
   v->compaction_level_ = best_level;
   v->compaction_score_ = best_score;
+
+  const uint64_t last_level_bytes = TotalFileSize(v->files_[config::kNumLevels-1]);
+  v->cloud_score_ = static_cast<double>(last_level_bytes) / MaxBytesForLevel(options_, config::kNumLevels-1);
 }
 
 Status VersionSet::WriteSnapshot(log::Writer* log) {
@@ -1141,17 +1346,29 @@ int VersionSet::NumLevelFiles(int level) const {
 
 const char* VersionSet::LevelSummary(LevelSummaryStorage* scratch) const {
   // Update code if kNumLevels changes
-  assert(config::kNumLevels == 7);
+  assert(config::kNumLevels == 3);
   snprintf(scratch->buffer, sizeof(scratch->buffer),
-           "files[ %d %d %d %d %d %d %d ]",
+           "files[ %d %d %d ]",
            int(current_->files_[0].size()),
            int(current_->files_[1].size()),
-           int(current_->files_[2].size()),
-           int(current_->files_[3].size()),
-           int(current_->files_[4].size()),
-           int(current_->files_[5].size()),
-           int(current_->files_[6].size()));
+           int(current_->files_[2].size()));
   return scratch->buffer;
+}
+
+const void VersionSet::LevelDetail() const {
+  std::vector<FileMetaData> files_deref[config::kNumLevels];
+  for (int i = 0; i < config::kNumLevels; i++) {
+    printf("level %d: nfile=%lu\n", i, current_->files_[i].size());
+    for (int j = 0; j < current_->files_[i].size(); j++) {
+      FileMetaData *md = current_->files_[i][j];
+      files_deref[i].push_back(*md);
+      printf("\tfile %d: number=%lu size=%lu smallest=`%s` largest=`%s`\n", j, md->number, md->file_size, md->smallest.DebugString().c_str(), md->largest.DebugString().c_str());
+    }
+  }
+
+  json j = files_deref;
+  std::string js = j.dump();
+  WriteStringToFile(env_, js, "/tmp/leveldb_merge.input");
 }
 
 uint64_t VersionSet::ApproximateOffsetOf(Version* v, const InternalKey& ikey) {
@@ -1292,6 +1509,74 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   return result;
 }
 
+bool VersionSet::ShouldCloudCompact() {
+#ifdef DEBUG_LOG
+  std::cerr << "ShouldCloudCompact()" << std::endl;
+  for (size_t i = 0; i < config::kNumLevels; i++) {
+    std::cerr << "level: " << i << " num files: " << current_->files_[i].size() << std::endl;
+  }
+  std::cerr << "cloud score " << current_->cloud_score_ << std::endl;
+  std::cerr << "compaction_score " << current_->compaction_score_ << std::endl;
+#endif
+  return current_->cloud_score_ > current_->compaction_score_;
+}
+
+CloudCompaction* VersionSet::PickCloudCompaction() {
+  assert(!current_->files_[config::kNumLevels-1].empty());
+
+  CloudCompaction *c = new CloudCompaction();
+  c->start_time = std::chrono::high_resolution_clock::now();
+  std::vector<FileMetaData*> last_level_files = current_->files_[config::kNumLevels-1];
+  std::vector<FileMetaData*> selected_files_ptrs;
+  for (size_t i = 0; i < last_level_files.size(); i++) {
+    FileMetaData* f = last_level_files[i];
+    if (cloud_compact_pointer_.empty() || icmp_.Compare(f->largest.Encode(), cloud_compact_pointer_) > 0) {
+        c->local_inputs_.push_back(*f);
+        selected_files_ptrs.push_back(f);
+        break;
+    }
+  }
+  if (c->local_inputs_.empty()) {
+    c->local_inputs_.push_back(*last_level_files[0]);
+    selected_files_ptrs.push_back(last_level_files[0]);
+  }
+
+  c->input_version_ = current_;
+  c->input_version_->Ref(); // TODO actually use refs
+
+  InternalKey smallest, largest;
+  GetRange(selected_files_ptrs, &smallest, &largest);
+
+  current_->GetOverlappingCloudInputs(&smallest, &largest, &c->cloud_inputs_);
+  // TODO see if we can compact more files for free
+
+  cloud_compact_pointer_ = largest.Encode().ToString();
+  c->edit_.SetCloudCompactPointer(largest);
+
+#ifdef DEBUG_LOG
+  std::cerr << "ShouldCloudCompact()" << std::endl;
+#endif
+  return c;
+}
+
+Iterator* VersionSet::MakeCloudInputIterator(std::vector<FileMetaData*> inputs[2]) {
+  ReadOptions options;
+  options.verify_checksums = options_->paranoid_checks;
+  options.fill_cache = false;
+
+  Iterator** list = new Iterator*[2];
+  int num = 0;
+  for (int which = 0; which < 2; which++) {
+    // Create concatenating iterator for the files from this level
+    list[num++] = NewTwoLevelIterator(
+        new Version::LevelFileNumIterator(icmp_, &inputs[which]),
+        &GetFileIterator, table_cache_, options);
+  }
+  Iterator* result = NewMergingIterator(&icmp_, list, num);
+  delete[] list;
+  return result;
+}
+
 Compaction* VersionSet::PickCompaction() {
   Compaction* c;
   int level;
@@ -1327,6 +1612,9 @@ Compaction* VersionSet::PickCompaction() {
     return NULL;
   }
 
+  c->start_time = std::chrono::high_resolution_clock::now();
+
+  std::chrono::high_resolution_clock::time_point start_time;
   c->input_version_ = current_;
   c->input_version_->Ref();
 

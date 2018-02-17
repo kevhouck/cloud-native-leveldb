@@ -1,15 +1,15 @@
-// Copyright (c) 2011 The LevelDB Authors. All rights reserved.
+// Copyright (c) 2012 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "db/db_impl.h"
-
 #include <algorithm>
 #include <set>
 #include <string>
 #include <stdint.h>
 #include <stdio.h>
 #include <vector>
+#include <iostream>
 #include "db/builder.h"
 #include "db/db_iter.h"
 #include "db/dbformat.h"
@@ -19,6 +19,7 @@
 #include "db/memtable.h"
 #include "db/table_cache.h"
 #include "db/version_set.h"
+#include "db/version_edit.h"
 #include "db/write_batch_internal.h"
 #include "leveldb/db.h"
 #include "leveldb/env.h"
@@ -35,7 +36,13 @@
 
 namespace leveldb {
 
+std::ofstream bench_file;
+
 const int kNumNonTableCacheFiles = 10;
+
+void DBImpl::Dump() {
+  versions_->LevelDetail();
+}
 
 // Information kept for every waiting writer
 struct DBImpl::Writer {
@@ -137,12 +144,19 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
       manual_compaction_(NULL) {
   has_imm_.Release_Store(NULL);
 
+  bench_file = std::ofstream("bench.log");
   // Reserve ten files or so for other uses and give the rest to TableCache.
   const int table_cache_size = options_.max_open_files - kNumNonTableCacheFiles;
   table_cache_ = new TableCache(dbname_, &options_, table_cache_size);
-
   versions_ = new VersionSet(dbname_, &options_, table_cache_,
                              &internal_comparator_);
+
+  std::cerr << "write_buffer_size=" << options_.write_buffer_size << std::endl;
+  std::cerr << "max_file_size=" << options_.max_file_size << std::endl;
+
+  if (options_.use_cloud) {
+    cloud_manager_ = new CloudManager(options_.region, options_.bucket);
+  }
 }
 
 DBImpl::~DBImpl() {
@@ -158,6 +172,9 @@ DBImpl::~DBImpl() {
     env_->UnlockFile(db_lock_);
   }
 
+  if (options_.use_cloud) {
+    delete cloud_manager_;
+  }
   delete versions_;
   if (mem_ != NULL) mem_->Unref();
   if (imm_ != NULL) imm_->Unref();
@@ -180,6 +197,7 @@ Status DBImpl::NewDB() {
   new_db.SetLogNumber(0);
   new_db.SetNextFile(2);
   new_db.SetLastSequence(0);
+  new_db.SetNextCloudFile(1000000);
 
   const std::string manifest = DescriptorFileName(dbname_, 1);
   WritableFile* file;
@@ -487,6 +505,9 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
 
 Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
                                 Version* base) {
+#ifdef DEBUG_LOG
+  std::cerr << "WriteLevel0Table()" << std::endl;
+#endif
   mutex_.AssertHeld();
   const uint64_t start_micros = env_->NowMicros();
   FileMetaData meta;
@@ -532,6 +553,9 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
 }
 
 void DBImpl::CompactMemTable() {
+#ifdef DEBUG_LOG
+  std::cerr << "CompactMemTable()" << std::endl;
+#endif
   mutex_.AssertHeld();
   assert(imm_ != NULL);
 
@@ -565,6 +589,9 @@ void DBImpl::CompactMemTable() {
 }
 
 void DBImpl::CompactRange(const Slice* begin, const Slice* end) {
+#ifdef DEBUG_LOG
+  std::cerr << "CompactRange()" << std::endl;
+#endif
   int max_level_with_files = 1;
   {
     MutexLock l(&mutex_);
@@ -643,6 +670,9 @@ void DBImpl::RecordBackgroundError(const Status& s) {
 }
 
 void DBImpl::MaybeScheduleCompaction() {
+#ifdef DEBUG_LOG
+  std::cerr << "MaybeScheduleCompaction()" << std::endl;
+#endif
   mutex_.AssertHeld();
   if (bg_compaction_scheduled_) {
     // Already scheduled
@@ -684,6 +714,11 @@ void DBImpl::BackgroundCall() {
 }
 
 void DBImpl::BackgroundCompaction() {
+#ifdef DEBUG_LOG
+  std::cerr << "BackgroundCompaction()" << std::endl;
+#endif
+  VersionSet::LevelSummaryStorage tmp;
+  std::cerr << versions_->LevelSummary(&tmp) << std::endl;
   mutex_.AssertHeld();
 
   if (imm_ != NULL) {
@@ -707,6 +742,26 @@ void DBImpl::BackgroundCompaction() {
         (m->begin ? m->begin->DebugString().c_str() : "(begin)"),
         (m->end ? m->end->DebugString().c_str() : "(end)"),
         (m->done ? "(end)" : manual_end.DebugString().c_str()));
+  } else if (versions_->ShouldCloudCompact()) {
+    CloudCompaction *cc = versions_->PickCloudCompaction();
+    Status s = SendCloudCompactionWork(cc);
+    if (!s.ok()) { 
+      Log(options_.info_log,
+          "Cloud Compaction error: %s", s.ToString().c_str());
+    } else {
+      s = FinishCloudCompaction(cc);
+      std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
+      std::chrono::high_resolution_clock::time_point start_time = cc->start_time;
+      bench_file << "cloud_compaction: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << " cloud_inputs: " << cc->cloud_inputs_.size() << " outputs: " << cc->new_cloud_files_.size() << std::endl;
+      if (!s.ok()) {
+        Log(options_.info_log,
+            "Cloud New Version error: %s", s.ToString().c_str());
+      } else {
+        // Cloud Compaction Successful
+      }
+      delete cc;
+    }
+    return;
   } else {
     c = versions_->PickCompaction();
   }
@@ -741,6 +796,10 @@ void DBImpl::BackgroundCompaction() {
     CleanupCompaction(compact);
     c->ReleaseInputs();
     DeleteObsoleteFiles();
+
+    std::chrono::high_resolution_clock::time_point end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point start_time = c->start_time;
+    bench_file << "compaction: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << " inputs_0: " << c->num_input_files(0) << " inputs_1: " << c->num_input_files(1) << " outputs: " << c->edit()->new_files_.size() << std::endl;
   }
   delete c;
 
@@ -769,6 +828,9 @@ void DBImpl::BackgroundCompaction() {
 }
 
 void DBImpl::CleanupCompaction(CompactionState* compact) {
+#ifdef DEBUG_LOG
+  std::cerr << "CleanupCompaction()" << std::endl;
+#endif
   mutex_.AssertHeld();
   if (compact->builder != NULL) {
     // May happen if we get a shutdown call in the middle of compaction
@@ -786,6 +848,9 @@ void DBImpl::CleanupCompaction(CompactionState* compact) {
 }
 
 Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
+#ifdef DEBUG_LOG
+  std::cerr << "OpenCompactionOutputFile()" << std::endl;
+#endif
   assert(compact != NULL);
   assert(compact->builder == NULL);
   uint64_t file_number;
@@ -810,8 +875,38 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
   return s;
 }
 
+Status DBImpl::FinishCloudCompaction(CloudCompaction* cc) {
+#ifdef DEBUG_LOG
+  std::cerr << "FinishCloudCompaction()" << std::endl;
+#endif
+  for (size_t i = 0; i < cc->local_inputs_.size(); i++) {
+    cc->edit_.DeleteFile(config::kNumLevels - 1, cc->local_inputs_[i].number);
+  } 
+  for (size_t i = 0; i < cc->cloud_inputs_.size(); i++) {
+    cc->edit_.DeleteCloudFile(cc->cloud_inputs_[i].obj_num);
+  } 
+  uint64_t max_cloud_file_number = cc->new_cloud_files_[0].obj_num;
+  for (size_t i = 0; i < cc->new_cloud_files_.size(); i++) {
+    if (max_cloud_file_number < cc->new_cloud_files_[i].obj_num) {
+      max_cloud_file_number = cc->new_cloud_files_[i].obj_num;
+    }
+    cc->edit_.AddCloudFile(cc->new_cloud_files_[i]);
+  } 
+  versions_->MarkCloudFileNumberUsed(max_cloud_file_number);
+  Status s = versions_->LogAndApply(&cc->edit_, &mutex_);
+  if (cc->input_version_ != NULL) {
+    cc->input_version_->Unref();
+    cc->input_version_ = NULL;
+  }
+  DeleteObsoleteFiles();
+  return s;
+}
+
 Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
                                           Iterator* input) {
+#ifdef DEBUG_LOG
+  std::cerr << "FinishCompactionOutputFile()" << std::endl;
+#endif
   assert(compact != NULL);
   assert(compact->outfile != NULL);
   assert(compact->builder != NULL);
@@ -850,7 +945,7 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
                                                current_bytes);
     s = iter->status();
     delete iter;
-    if (s.ok()) {
+    if (s.ok() && compact->compaction) {
       Log(options_.info_log,
           "Generated table #%llu@%d: %lld keys, %lld bytes",
           (unsigned long long) output_number,
@@ -864,6 +959,9 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
 
 
 Status DBImpl::InstallCompactionResults(CompactionState* compact) {
+#ifdef DEBUG_LOG
+  std::cerr << "InstallCompactionResults()" << std::endl;
+#endif
   mutex_.AssertHeld();
   Log(options_.info_log,  "Compacted %d@%d + %d@%d files => %lld bytes",
       compact->compaction->num_input_files(0),
@@ -884,7 +982,33 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
 }
 
+Status DBImpl::SendCloudCompactionWork(CloudCompaction *cc) {
+#ifdef DEBUG_LOG
+  std::cerr << "SendCloudCompactionWork()" << std::endl;
+#endif
+
+  for (size_t i = 0; i < cc->local_inputs_.size(); i++) {
+    // Add local inputs to S3
+    FileMetaData f = cc->local_inputs_[i];
+    Status s = cloud_manager_->SendFile(f.number, dbname_);
+    if (!s.ok()) {
+      return s;
+    }
+  } 
+  
+  // Create Lambda invocations for each compation
+  Status s = cloud_manager_->InvokeLambdaCompaction(cc, versions_);
+  if (!s.ok()) {
+    return s;
+  }
+
+  return Status::OK();
+}
+
 Status DBImpl::DoCompactionWork(CompactionState* compact) {
+#ifdef DEBUG_LOG
+  std::cerr << "DoCompactionWork()" << std::endl;
+#endif
   const uint64_t start_micros = env_->NowMicros();
   int64_t imm_micros = 0;  // Micros spent doing imm_ compactions
 
@@ -1039,9 +1163,106 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   if (!status.ok()) {
     RecordBackgroundError(status);
   }
+
   VersionSet::LevelSummaryStorage tmp;
   Log(options_.info_log,
       "compacted to: %s", versions_->LevelSummary(&tmp));
+  return status;
+}
+
+Status DBImpl::DoCloudCompactionWork(std::vector<FileMetaData*> inputs[2], std::vector<FileMetaData*> *output, int next_file_number) {
+  CompactionState *compact = new CompactionState(NULL);
+  versions_->MarkFileNumberUsed(next_file_number-1);
+
+  if (snapshots_.empty()) {
+    compact->smallest_snapshot = versions_->LastSequence();
+  } else {
+    compact->smallest_snapshot = snapshots_.oldest()->number_;
+  }
+
+  Iterator* input = versions_->MakeCloudInputIterator(inputs);
+  input->SeekToFirst();
+  Status status;
+  ParsedInternalKey ikey;
+  std::string current_user_key;
+  bool has_current_user_key = false;
+  SequenceNumber last_sequence_for_key = kMaxSequenceNumber;
+  while (input->Valid()) {
+    Slice key = input->key();
+
+    // Handle key/value, add to state, etc.
+    bool drop = false;
+    if (!ParseInternalKey(key, &ikey)) {
+      // Do not hide error keys
+      current_user_key.clear();
+      has_current_user_key = false;
+      last_sequence_for_key = kMaxSequenceNumber;
+    } else {
+      if (!has_current_user_key ||
+          user_comparator()->Compare(ikey.user_key,
+                                     Slice(current_user_key)) != 0) {
+        // First occurrence of this user key
+        current_user_key.assign(ikey.user_key.data(), ikey.user_key.size());
+        has_current_user_key = true;
+        last_sequence_for_key = kMaxSequenceNumber;
+      }
+
+      if (last_sequence_for_key <= compact->smallest_snapshot) {
+        // Hidden by an newer entry for same user key
+        drop = true;    // (A)
+      } else if (ikey.type == kTypeDeletion &&
+                 ikey.sequence <= compact->smallest_snapshot) {
+        drop = true;
+      }
+
+      last_sequence_for_key = ikey.sequence;
+    }
+
+    if (!drop) {
+      // Open output file if necessary
+      if (compact->builder == NULL) {
+        status = OpenCompactionOutputFile(compact);
+        if (!status.ok()) {
+          break;
+        }
+      }
+      if (compact->builder->NumEntries() == 0) {
+        compact->current_output()->smallest.DecodeFrom(key);
+      }
+      compact->current_output()->largest.DecodeFrom(key);
+      compact->builder->Add(key, input->value());
+
+      // Close output file if it is big enough
+      if (compact->builder->FileSize() >= options_.max_file_size) {
+        status = FinishCompactionOutputFile(compact, input);
+        if (!status.ok()) {
+          break;
+        }
+      }
+    }
+
+    input->Next();
+  }
+
+  if (status.ok() && compact->builder != NULL) {
+    status = FinishCompactionOutputFile(compact, input);
+  }
+  if (status.ok()) {
+    status = input->status();
+  }
+  for (size_t i = 0; i < compact->outputs.size(); i++) {
+    const CompactionState::Output& out = compact->outputs[i];
+    FileMetaData f;
+    f.number = out.number;
+    f.file_size = out.file_size;
+    f.smallest = out.smallest;
+    f.largest = out.largest;
+    output->push_back(new FileMetaData(f));
+  }
+  delete input;
+  delete compact;
+  input = NULL;
+
   return status;
 }
 
@@ -1138,7 +1359,7 @@ Status DBImpl::Get(const ReadOptions& options,
     } else if (imm != NULL && imm->Get(lkey, value, &s)) {
       // Done
     } else {
-      s = current->Get(options, lkey, value, &stats);
+      s = current->Get(options, lkey, value, &stats, cloud_manager_);
       have_stat_update = true;
     }
     mutex_.Lock();
@@ -1489,6 +1710,10 @@ DB::~DB() { }
 
 Status DB::Open(const Options& options, const std::string& dbname,
                 DB** dbptr) {
+#ifdef DEBUG_LOG
+  std::cerr << "Opening..........................." << std::endl;
+#endif
+
   *dbptr = NULL;
 
   DBImpl* impl = new DBImpl(options, dbname);

@@ -114,6 +114,12 @@ static bool FLAGS_reuse_logs = false;
 // Use the db with the following name.
 static const char* FLAGS_db = NULL;
 
+static bool FLAGS_use_cloud = false;
+
+static const char* FLAGS_cloud_bucket = NULL;
+
+static const char* FLAGS_cloud_region = NULL;
+
 namespace leveldb {
 
 namespace {
@@ -544,6 +550,7 @@ class Benchmark {
       if (method != NULL) {
         RunBenchmark(num_threads, name, method);
       }
+      db_->Dump();
     }
   }
 
@@ -718,6 +725,9 @@ class Benchmark {
     options.max_open_files = FLAGS_open_files;
     options.filter_policy = filter_policy_;
     options.reuse_logs = FLAGS_reuse_logs;
+    options.use_cloud = FLAGS_use_cloud;
+    options.bucket = FLAGS_cloud_bucket;
+    options.region = FLAGS_cloud_region;
     Status s = DB::Open(options, FLAGS_db, &db_);
     if (!s.ok()) {
       fprintf(stderr, "open error: %s\n", s.ToString().c_str());
@@ -999,6 +1009,13 @@ int main(int argc, char** argv) {
       FLAGS_open_files = n;
     } else if (strncmp(argv[i], "--db=", 5) == 0) {
       FLAGS_db = argv[i] + 5;
+    } else if (sscanf(argv[i], "--use_cloud=%d%c", &n, &junk) == 1 &&
+               (n == 0 || n == 1)) {
+      FLAGS_use_cloud = n;
+    } else if (strncmp(argv[i], "--cloud_bucket=", 15) == 0) {
+      FLAGS_cloud_bucket = argv[i] + 15;
+    } else if (strncmp(argv[i], "--cloud_region=", 15) == 0) {
+      FLAGS_cloud_region = argv[i] + 15;
     } else {
       fprintf(stderr, "Invalid flag '%s'\n", argv[i]);
       exit(1);

@@ -14,19 +14,26 @@
 #include "leveldb/env.h"
 #include "port/port.h"
 #include "port/thread_annotations.h"
+#include <iostream>
+#include <fstream>
 
 namespace leveldb {
 
 class MemTable;
 class TableCache;
+class CloudManager;
+class CloudCompaction;
 class Version;
 class VersionEdit;
 class VersionSet;
+struct FileMetaData;
 
 class DBImpl : public DB {
  public:
   DBImpl(const Options& options, const std::string& dbname);
   virtual ~DBImpl();
+
+  virtual void Dump();
 
   // Implementations of the DB interface
   virtual Status Put(const WriteOptions&, const Slice& key, const Slice& value);
@@ -63,6 +70,8 @@ class DBImpl : public DB {
   // Samples are taken approximately once every config::kReadBytesPeriod
   // bytes.
   void RecordReadSample(Slice key);
+
+  Status DoCloudCompactionWork(std::vector<FileMetaData*> inputs[2], std::vector<FileMetaData*> *output, int next_file_number);
 
  private:
   friend class DB;
@@ -111,6 +120,10 @@ class DBImpl : public DB {
   void CleanupCompaction(CompactionState* compact)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   Status DoCompactionWork(CompactionState* compact)
+      EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  Status SendCloudCompactionWork(CloudCompaction *cc);
+      EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  Status FinishCloudCompaction(CloudCompaction *cc); 
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   Status OpenCompactionOutputFile(CompactionState* compact);
@@ -170,6 +183,7 @@ class DBImpl : public DB {
 
   VersionSet* versions_;
 
+
   // Have we encountered a background error in paranoid mode?
   Status bg_error_;
 
@@ -197,6 +211,8 @@ class DBImpl : public DB {
   const Comparator* user_comparator() const {
     return internal_comparator_.user_comparator();
   }
+  
+  CloudManager* cloud_manager_;
 };
 
 // Sanitize db options.  The caller should delete result.info_log if

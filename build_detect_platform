@@ -64,6 +64,8 @@ PLATFORM_SHARED_EXT="so"
 PLATFORM_SHARED_LDFLAGS="-shared -Wl,-soname -Wl,"
 PLATFORM_SHARED_CFLAGS="-fPIC -fvisibility=hidden"
 PLATFORM_SHARED_VERSIONED=true
+PLATFORM_SSEFLAGS=
+VENDOR=
 
 MEMCMP_FLAG=
 if [ "$CXX" = "g++" ]; then
@@ -92,6 +94,8 @@ case "$TARGET_OS" in
         COMMON_FLAGS="$MEMCMP_FLAG -pthread -DOS_LINUX"
         PLATFORM_LDFLAGS="-pthread"
         PORT_FILE=port/port_posix.cc
+        PORT_SSE_FILE=port/port_posix_sse.cc
+        VENDOR=./vendor_"$(sed -n 's/^ID="\?\([^"]*\).*/\1/p' /etc/os-release)"
         ;;
     SunOS)
         PLATFORM=OS_SOLARIS
@@ -162,7 +166,7 @@ DIRS="$PREFIX/db $PREFIX/util $PREFIX/table"
 set -f # temporarily disable globbing so that our patterns aren't expanded
 PRUNE_TEST="-name *test*.cc -prune"
 PRUNE_BENCH="-name *_bench.cc -prune"
-PRUNE_TOOL="-name leveldbutil.cc -prune"
+PRUNE_TOOL="-name leveldbutil.cc -prune -o -name standalone_merger.cc -prune -o -name table_reader.cc -prune"
 PORTABLE_FILES=`find $DIRS $PRUNE_TEST -o $PRUNE_BENCH -o $PRUNE_TOOL -o -name '*.cc' -print | sort | sed "s,^$PREFIX/,," | tr "\n" " "`
 
 set +f # re-enable globbing
@@ -241,3 +245,4 @@ echo "PLATFORM_SHARED_CFLAGS=$PLATFORM_SHARED_CFLAGS" >> $OUTPUT
 echo "PLATFORM_SHARED_EXT=$PLATFORM_SHARED_EXT" >> $OUTPUT
 echo "PLATFORM_SHARED_LDFLAGS=$PLATFORM_SHARED_LDFLAGS" >> $OUTPUT
 echo "PLATFORM_SHARED_VERSIONED=$PLATFORM_SHARED_VERSIONED" >> $OUTPUT
+echo "VENDOR=$VENDOR" >> $OUTPUT
